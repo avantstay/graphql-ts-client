@@ -13,7 +13,7 @@ yarn add graphql-ts-client
 ### Generate the client
 
 ```typescript
-import { generateTypescriptClient } from 'graphql-ts-client'
+import { generateTypescriptClient } from '@avantstay/graphql-ts-client'
 
 generateTypescriptClient({
   output: './myAwesomeApi.ts',

@@ -1,5 +1,5 @@
 {
-  "name": "graphql-ts-client",
+  "name": "@avantstay/graphql-ts-client",
   "version": "10.5.0",
   "description": "GraphQL Typescript Client Generator",
   "author": "Wellington Guimaraes",
@@ -19,12 +19,12 @@
     "node": ">=12"
   },
   "bugs": {
-    "url": "https://github.com/wellguimaraes/graphql-ts-client/issues"
+    "url": "https://github.com/avantstay/graphql-ts-client/issues"
   },
-  "homepage": "https://github.com/wellguimaraes/graphql-ts-client#readme",
+  "homepage": "https://github.com/avantstay/graphql-ts-client#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wellguimaraes/graphql-ts-client.git"
+    "url": "git+https://github.com/avantstay/graphql-ts-client.git"
   },
   "peerDependencies": {},
   "prettier": {
