@@ -1,0 +1,133 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Generated Client should generate proper code from SDL 1`] = `
+{
+  "js": "var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __markAsModule = (target) => __defProp(target, "__esModule", { value: true });
+var __export = (target, all) => {
+  __markAsModule(target);
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __reExport = (target, module2, desc) => {
+  if (module2 && typeof module2 === "object" || typeof module2 === "function") {
+    for (let key of __getOwnPropNames(module2))
+      if (!__hasOwnProp.call(target, key) && key !== "default")
+        __defProp(target, key, { get: () => module2[key], enumerable: !(desc = __getOwnPropDesc(module2, key)) || desc.enumerable });
+  }
+  return target;
+};
+var __toModule = (module2) => {
+  return __reExport(__markAsModule(__defProp(module2 != null ? __create(__getProtoOf(module2)) : {}, "default", module2 && module2.__esModule && "default" in module2 ? { get: () => module2.default, enumerable: true } : { value: module2, enumerable: true })), module2);
+};
+__export(exports, {
+  client: () => client,
+  default: () => stdin_default
+});
+var import_endpoint = __toModule(require("../dist/endpoint"));
+const formatGraphQL = (query) => query;
+const typesTree = {};
+let verbose = false;
+let headers = {};
+let url = "https://sample.endpoint.com/graphl";
+let retryConfig = {
+  max: 0,
+  before: void 0,
+  waitBeforeRetry: 0
+};
+let responseListeners = [];
+let errorsParser = void 0;
+let apiEndpoint = (0, import_endpoint.getApiEndpointCreator)({
+  getClient: () => ({ url, headers, retryConfig }),
+  responseListeners,
+  maxAge: 3e4,
+  verbose,
+  typesTree,
+  formatGraphQL,
+  errorsParser
+});
+const client = {
+  addResponseListener: (listener) => responseListeners.push(listener),
+  setHeader: (key, value) => {
+    headers[key] = value;
+  },
+  setHeaders: (newHeaders) => {
+    headers = newHeaders;
+  },
+  setRetryConfig: (options) => {
+    if (!Number.isInteger(options.max) || options.max < 0) {
+      throw new Error("retryOptions.max should be a non-negative integer");
+    }
+    retryConfig = {
+      max: options.max,
+      waitBeforeRetry: options.waitBeforeRetry,
+      before: options.before
+    };
+  },
+  setUrl: (_url) => url = _url,
+  queries: {
+    hello: apiEndpoint("query", "hello")
+  },
+  mutations: {}
+};
+var stdin_default = client;
+",
+  "typings": "// noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
+import { DeepRequired } from "ts-essentials"
+import { Maybe, IResponseListener, Endpoint } from "../dist"
+
+// Scalars
+export type IDate = string | Date
+
+// Enums
+
+type AllEnums = never
+
+// Args
+export interface HelloArgs {}
+
+// Input/Output Types
+
+/**
+ * @deprecated Avoid directly using this interface. Instead, create a type alias based on the query/mutation return type.
+ */
+
+export interface Query {
+  hello?: string
+}
+
+// Selection Types
+
+export declare const client: {
+  addResponseListener: (listener: IResponseListener) => void
+  setHeader: (key: string, value: string) => void
+  setHeaders: (newHeaders: { [k: string]: string }) => void
+  setUrl: (url: string) => void
+  setRetryConfig: (options: {
+    max: number
+    waitBeforeRetry?: number
+    before?: IResponseListener
+  }) => void
+  queries: {
+    hello: Endpoint<
+      {
+        __headers?: { [key: string]: string }
+        __retry?: boolean
+        __alias?: string
+      },
+      string,
+      AllEnums
+    >
+  }
+  mutations: {}
+}
+
+export default client
+",
+}
+`;
