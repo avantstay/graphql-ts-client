@@ -1,6 +1,6 @@
 import { ApolloServer } from 'apollo-server'
 import * as path from 'path'
-import { generateTypescriptClient } from './generateTypescriptClient'
+import { generateTypescriptClient, generateTypescriptClientFromSDL } from './generateTypescriptClient'
 import { startServer } from './testServer'
 import { GraphQLClientError, ResponseListenerInfo } from './types'
 
@@ -123,5 +123,14 @@ describe('Generated Client', () => {
 
     expect(responseData?.queryName).toBe('failingQuery')
     expect(responseData?.response.errors.length).toBeGreaterThan(0)
+  })
+
+  it('should generate proper code from SDL', ()=>{
+    const sdlString = `
+  type Query {
+    hello: String
+  }
+`;
+    expect(generateTypescriptClientFromSDL(sdlString, {endpoint: 'https://sample.endpoint.com/graphl'})).toMatchSnapshot()
   })
 })

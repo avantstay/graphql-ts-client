@@ -5,6 +5,8 @@ import * as esbuild from 'esbuild'
 import * as fs from 'fs'
 import { PathLike } from 'fs'
 import {
+  buildSchema,
+  graphqlSync,
   getIntrospectionQuery,
   IntrospectionEnumType,
   IntrospectionField,
@@ -13,6 +15,7 @@ import {
   IntrospectionObjectType,
   IntrospectionOutputTypeRef,
   IntrospectionType,
+  Source,
 } from 'graphql'
 import { kebabCase } from 'lodash'
 import orderBy from 'lodash/orderBy'
@@ -479,7 +482,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   return output
 }
 
-async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptions) {
+async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptions): Promise<ReadonlyArray<IntrospectionType>> {
   const introspectionCacheFileName = `gql-ts-client__introspection__${kebabCase(endpoint)}.json`
   const introspectionCacheFilePath = path.resolve(tempDir, introspectionCacheFileName)
 
@@ -522,15 +525,10 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
   return types
 }
 
-export async function generateTypescriptClient({ introspectionEndpoint, output, ...options }: IClientOptions): Promise<{ typings: string; js: string }> {
-  axiosRetry(axios, { retries: 5, retryDelay: retryCount => 1000 * 2 ** retryCount })
+type Client = { typings: string; js: string }
 
-  const types = await fetchIntrospection({
-    ...options,
-    endpoint: introspectionEndpoint || options.endpoint,
-  })
-
-  const { js, typings } = generateClientCode(types, options)
+function generateClient(introspectionTypes: ReadonlyArray<IntrospectionType>, {output,...restOptions}: IClientOptions): Client {
+  const { js, typings } = generateClientCode(introspectionTypes, restOptions)
 
   if (output && typeof output === 'string') {
     const outputDir = path.dirname(output)
@@ -544,4 +542,27 @@ export async function generateTypescriptClient({ introspectionEndpoint, output, 
   }
 
   return { js, typings }
+}
+
+export async function generateTypescriptClient({ introspectionEndpoint, ...options }: IClientOptions): Promise<Client> {
+  console.log(`Generating TypeScript client (name: ${options.clientName ?? 'n/a'})`)
+
+  axiosRetry(axios, { retries: 5, retryDelay: retryCount => 1000 * 2 ** retryCount })
+
+  const introspectionTypes = await fetchIntrospection({
+    ...options,
+    endpoint: introspectionEndpoint || options.endpoint,
+  })
+
+  return generateClient(introspectionTypes, options)
+
+}
+
+export function generateTypescriptClientFromSDL(SDL: string, options: IClientOptions): Client {
+  console.log(`Generating TypeScript client from SDL (name: ${options.clientName ?? 'n/a'})`);
+
+  const graphqlSchemaObj = buildSchema(SDL);
+  const introspectionTypes = graphqlSync(graphqlSchemaObj, new Source(getIntrospectionQuery())).data?.__schema.types as IntrospectionType[]
+
+  return generateClient(introspectionTypes, options)
 }

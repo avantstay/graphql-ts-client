@@ -4,5 +4,6 @@ node_modules
 dist
 .idea
 .cache
+.run
 __testClient.d.ts
 __testClient.js
