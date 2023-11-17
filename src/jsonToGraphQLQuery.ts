@@ -7,7 +7,7 @@ const fromEntries: (arr: [string, any][]) => { [key: string]: any } = require('l
 const entries: (obj: { [key: string]: any }) => [string, any][] = require('lodash/toPairs')
 const cloneDeep = require('lodash/cloneDeep')
 
-type ExtractedVariables = Record<string, (Variable & { name: string })[]>
+type ExtractedVariables = Record<string, (Variable & { name: string; update: (index?: number) => string })[]>
 type Variable = { type: any; value: any }
 
 export function jsonToGraphQLQuery({
@@ -32,8 +32,9 @@ export function jsonToGraphQLQuery({
   })
 
   const variableItems = Object.values(variablesData).reduce((variablesObj, variables) => {
-    variables.forEach(variable => {
-      variablesObj[variable.name] = { type: variable.type, value: variable.value }
+    variables.forEach((variable, index) => {
+      const name = variable.update(variables.length > 1 ? index : undefined)
+      variablesObj[name] = { type: variable.type, value: variable.value }
     })
 
     return variablesObj
@@ -72,20 +73,25 @@ function extractVariables({
       if (typeof jsonQuery.__args[k] === 'string' && jsonQuery.__args[k].startsWith(VAR_PREFIX)) return
       if (jsonQuery.__args[k] === undefined) return
 
-      const baseVariableName = k
+      const variableName = k
 
-      if (!variables[baseVariableName]) {
-        variables[baseVariableName] = []
+      if (!variables[variableName]) {
+        variables[variableName] = []
       }
 
-      const variableName = `${k}_${variables[baseVariableName].length}`
-      variables[baseVariableName].push({
+      variables[variableName].push({
         name: variableName,
         type: parentType.__args[k],
         value: jsonQuery.__args[k],
+        update: (index?: number) => {
+          const name = `${variableName}${index !== undefined ? `_${index}` : ''}`
+          jsonQuery.__args[k] = `${VAR_PREFIX}$${name}`
+
+          return name
+        },
       })
 
-      jsonQuery.__args[k] = `${VAR_PREFIX}$${variableName}`
+      jsonQuery.__args[k] = VAR_PREFIX
     })
   }
 

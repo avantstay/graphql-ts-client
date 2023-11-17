@@ -76,7 +76,7 @@ describe('jsonToGraphQLQuery', () => {
     expect(response.variables).toEqual({
       foo_0: 'Bar',
       foo_1: 'Lorem ipsum',
-      bar_0: 'Dolor sit amet',
+      bar: 'Dolor sit amet',
     })
   })
 })
