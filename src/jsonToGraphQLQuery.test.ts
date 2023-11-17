@@ -38,8 +38,14 @@ describe('jsonToGraphQLQuery', () => {
       __args: {
         foo: 'Bar',
       },
-
       something: true,
+      another: {
+        __args: {
+          foo: 'Lorem ipsum',
+          bar: 'Dolor sit amet',
+        },
+        zeta: true,
+      },
     }
 
     const response = jsonToGraphQLQuery({
@@ -53,14 +59,24 @@ describe('jsonToGraphQLQuery', () => {
               __args: {
                 foo: 'UUID!',
               },
+              something: 'Boolean!',
+              another: {
+                __args: {
+                  foo: 'String!',
+                  bar: 'String!',
+                },
+                zeta: 'Int!',
+              },
             }
           },
         },
       },
     })
 
-    Object.keys(response.variables).forEach(varName => {
-      expect(response.query.split(varName).length - 1).toBeGreaterThanOrEqual(2) //every variable name should be present at least 2 times
+    expect(response.variables).toEqual({
+      foo_0: 'Bar',
+      foo_1: 'Lorem ipsum',
+      bar_0: 'Dolor sit amet',
     })
   })
 })
