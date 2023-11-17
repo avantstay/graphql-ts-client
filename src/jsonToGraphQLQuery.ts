@@ -7,6 +7,9 @@ const fromEntries: (arr: [string, any][]) => { [key: string]: any } = require('l
 const entries: (obj: { [key: string]: any }) => [string, any][] = require('lodash/toPairs')
 const cloneDeep = require('lodash/cloneDeep')
 
+type ExtractedVariables = Record<string, (Variable & { name: string; update: (index?: number) => string })[]>
+type Variable = { type: any; value: any }
+
 export function jsonToGraphQLQuery({
   kind,
   queryName,
@@ -18,7 +21,7 @@ export function jsonToGraphQLQuery({
   jsonQuery: any
   typesTree: any
 }) {
-  const variablesData = {} as any
+  const variablesData = {} as ExtractedVariables
   const alias = jsonQuery.__alias
   const newJsonQuery = cloneDeep(omit(jsonQuery, ['__alias', '__headers']))
 
@@ -28,8 +31,17 @@ export function jsonToGraphQLQuery({
     parentType: kind === 'query' ? typesTree.Query : typesTree.Mutation,
   })
 
-  const variablesQuery = Object.keys(variablesData).length
-    ? `(${entries(variablesData)
+  const variableItems = Object.values(variablesData).reduce((variablesObj, variables) => {
+    variables.forEach((variable, index) => {
+      const name = variable.update(variables.length > 1 ? index : undefined)
+      variablesObj[name] = { type: variable.type, value: variable.value }
+    })
+
+    return variablesObj
+  }, {} as Record<string, Variable>)
+
+  const variablesQuery = Object.keys(variableItems).length
+    ? `(${entries(variableItems)
         .map(([queryName, { type }]: any) => `$${queryName}: ${type}`)
         .join(', ')})`
     : ''
@@ -37,7 +49,7 @@ export function jsonToGraphQLQuery({
   const query = `${kind} ${alias || queryName}${variablesQuery} { ${alias ? `${alias}:` : ''}${queryName}${toGraphql(
     newJsonQuery
   )} }`
-  const variables = fromEntries(entries(variablesData).map(([k, v]: any) => [k, v.value]))
+  const variables = fromEntries(entries(variableItems).map(([k, v]: any) => [k, v.value]))
 
   return {
     query,
@@ -45,22 +57,41 @@ export function jsonToGraphQLQuery({
   }
 }
 
-function extractVariables({ jsonQuery, variables, parentType }: { jsonQuery: any; variables: any; parentType: any }) {
+function extractVariables({
+  jsonQuery,
+  variables,
+  parentType,
+}: {
+  jsonQuery: any
+  variables: ExtractedVariables
+  parentType: any
+}) {
   if (!parentType) return
 
   if (jsonQuery.__args) {
     Object.keys(jsonQuery.__args).forEach(k => {
       if (typeof jsonQuery.__args[k] === 'string' && jsonQuery.__args[k].startsWith(VAR_PREFIX)) return
+      if (jsonQuery.__args[k] === undefined) return
 
-      const variableName = `${k}_${Math.random().toString(36).substr(2, 4)}`
+      const variableName = k
 
-      if (jsonQuery.__args[k] !== undefined) {
-        variables[variableName] = {
-          type: parentType.__args[k],
-          value: jsonQuery.__args[k],
-        }
-        jsonQuery.__args[k] = `${VAR_PREFIX}$${variableName}`
+      if (!variables[variableName]) {
+        variables[variableName] = []
       }
+
+      variables[variableName].push({
+        name: variableName,
+        type: parentType.__args[k],
+        value: jsonQuery.__args[k],
+        update: (index?: number) => {
+          const name = `${variableName}${index !== undefined ? `_${index}` : ''}`
+          jsonQuery.__args[k] = `${VAR_PREFIX}$${name}`
+
+          return name
+        },
+      })
+
+      jsonQuery.__args[k] = VAR_PREFIX
     })
   }
 
