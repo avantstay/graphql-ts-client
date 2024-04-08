@@ -152,10 +152,9 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
   }${selectionType ? ` & ${selectionType}` : ''}`
 
   const outputType = gqlTypeToTypescript(endpoint.type, { required: true })
-  const wrappedOutputType = /^(string|number|boolean)$/.test(outputType) ? outputType : `DeepRequired<${outputType}>`
 
   return codeOutputType === 'ts'
-    ? `${endpoint.name}: Endpoint<${inputType}, ${wrappedOutputType}, AllEnums>`
+    ? `${endpoint.name}: Endpoint<${inputType}, ${outputType}, AllEnums>`
     : `${endpoint.name}: apiEndpoint('${kind}', '${endpoint.name}')`
 }
 
