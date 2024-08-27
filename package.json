@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "10.7.0",
+  "version": "10.8.0",
   "description": "GraphQL Typescript Client Generator",
   "author": "Wellington Guimaraes",
   "license": "MIT",

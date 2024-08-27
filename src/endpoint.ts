@@ -32,7 +32,10 @@ export const getApiEndpointCreator =
       headers: any
       status: any
     }> => {
+      const clientConfig = apiConfig.getClient()
+
       const alias = (jsonQuery as any)?.__alias ?? queryName
+      const url = (jsonQuery as any)?.__url ?? clientConfig.url
       const shouldRetry = (jsonQuery as any)?.__retry ?? true
       const requestHeaders = (jsonQuery as any)?.__headers ?? {}
       const { query, variables } = jsonToGraphQLQuery({ kind, queryName, jsonQuery, typesTree: apiConfig.typesTree })
@@ -58,7 +61,7 @@ export const getApiEndpointCreator =
           shouldRetry,
           failureMode,
           queryName: alias,
-          client: apiConfig.getClient(),
+          client: {...clientConfig, url },
           requestHeaders,
           query,
           variables,

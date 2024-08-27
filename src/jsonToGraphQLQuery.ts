@@ -23,7 +23,7 @@ export function jsonToGraphQLQuery({
 }) {
   const variablesData = {} as ExtractedVariables
   const alias = jsonQuery.__alias
-  const newJsonQuery = cloneDeep(omit(jsonQuery, ['__alias', '__headers']))
+  const newJsonQuery = cloneDeep(omit(jsonQuery, ['__alias', '__headers', '__url']))
 
   extractVariables({
     jsonQuery: { [queryName]: newJsonQuery },

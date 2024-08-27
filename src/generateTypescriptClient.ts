@@ -17,7 +17,7 @@ import {
   IntrospectionType,
   Source,
 } from 'graphql'
-import { kebabCase } from 'lodash'
+import kebabCase from 'lodash/kebabCase'
 import orderBy from 'lodash/orderBy'
 import set from 'lodash/set'
 import md5 from 'md5'
@@ -108,7 +108,7 @@ function gqlFieldToTypescript(
       })
     )
 
-    fieldTypeDefinition = `{ __headers?: {[key: string]: string}; __retry?: boolean; __alias?: string; __args${
+    fieldTypeDefinition = `{ __headers?: {[key: string]: string}; __retry?: boolean; __alias?: string; __url?: string; __args${
       fieldsOnArgs.every(arg => arg.isOptional) ? '?' : ''
     }: { ${fieldsOnArgs.map(arg => arg.code).join(', ')} }}${fieldTypeDefinition ? ` & ${fieldTypeDefinition}` : ''}`
   }
@@ -148,6 +148,7 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
     __headers?: {[key: string]: string};
     __retry?: boolean;
     __alias?: string;
+    __url?: string;
     ${argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : ''}
   }${selectionType ? ` & ${selectionType}` : ''}`
 
@@ -500,7 +501,7 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
         },
       }
     )
-    .catch(() => {
+    .catch((e) => {
       const errorMessage = `The GraphQL introspection request failed (${endpoint})`
       if (fs.existsSync(introspectionCacheFilePath)) {
         const cachedSchema = JSON.parse(fs.readFileSync(introspectionCacheFilePath, { encoding: 'utf8' }))
@@ -508,6 +509,7 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
         console.warn(`Successfully restored from local cache.`)
         return { data: cachedSchema }
       } else {
+        console.error(e)
         return Promise.reject(errorMessage)
       }
     })

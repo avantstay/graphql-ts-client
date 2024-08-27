@@ -29,7 +29,7 @@ __export(exports, {
   client: () => client,
   default: () => stdin_default
 });
-var import_endpoint = __toModule(require("../dist/endpoint"));
+var import_endpoint = __toModule(require("./endpoint"));
 const formatGraphQL = (query) => query;
 const typesTree = {};
 let verbose = false;
@@ -79,7 +79,7 @@ var stdin_default = client;
 ",
   "typings": "// noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
 import { DeepRequired } from "ts-essentials"
-import { Maybe, IResponseListener, Endpoint } from "../dist"
+import { Maybe, IResponseListener, Endpoint } from "."
 
 // Scalars
 export type IDate = string | Date
@@ -119,6 +119,7 @@ export declare const client: {
         __headers?: { [key: string]: string }
         __retry?: boolean
         __alias?: string
+        __url?: string
       },
       string,
       AllEnums
