@@ -21,11 +21,14 @@ export type IResponseListener = (info: ResponseListenerInfo) => void | Promise<v
 
 type ArrayElement<ArrayType extends readonly unknown[]> = ArrayType extends readonly (infer ElementType)[] ? ElementType : never
 
+type Primitive = Date | string | number | boolean | null | undefined
+
+// Projection is the resulting type of Selection (type generated out of a query) applied to Base (generated graphql type)
 export type Projection<Selection, Base, E = never> = Base extends Array<any>
-  ? ArrayElement<Base> extends Date | string | number | boolean | null | undefined | E
+  ? ArrayElement<Base> extends Primitive | E
     ? ArrayElement<Base>[]
     : Projection<Defined<Selection>, ArrayElement<Base>, E>[]
-  : Base extends Date | string | number | boolean | null | E
+  : Base extends Primitive | E
   ? // Is primitive and extends undefined
     Selection extends undefined
     ? Base | undefined
