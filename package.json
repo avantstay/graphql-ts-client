@@ -2,7 +2,7 @@
   "name": "@avantstay/graphql-ts-client",
   "version": "10.8.0",
   "description": "GraphQL Typescript Client Generator",
-  "homepage": "https://github.com/avantstay/graphql-ts-client#readme",
+  "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {
     "url": "https://github.com/avantstay/graphql-ts-client/issues"
   },
@@ -12,6 +12,9 @@
   },
   "license": "MIT",
   "author": "Wellington Guimaraes",
+  "contributors": [
+    "Felipe Pinheiro <felipe.pinheiro.90@hotmail.com>"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
@@ -25,7 +28,7 @@
     }
   },
   "main": "dist/index.js",
-  "module": "dist/graphql-ts-client.esm.js",
+  "module": "dist/index.mjs",
   "typings": "dist/index.d.ts",
   "files": [
     "dist",
