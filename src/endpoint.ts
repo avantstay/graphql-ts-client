@@ -2,14 +2,10 @@ import memoize from 'moize'
 import { graphqlRequest } from './graphqlRequest'
 import { jsonToGraphQLQuery } from './jsonToGraphQLQuery'
 import { logRequest } from './logging'
-import {ClientConfig, Endpoint, GraphQLClientError, IResponseListener, Projection, ResponseListenerInfo} from './types'
+import { ClientConfig, Endpoint, GraphQLClientError, IResponseListener, Projection, ResponseListenerInfo } from './types'
 
 const executeListeners = (listeners: IResponseListener[], data: ResponseListenerInfo) =>
-  setTimeout(() =>
-    listeners.forEach(runResponseListener =>
-      runResponseListener(data)
-    )
-  )
+  setTimeout(() => listeners.forEach(runResponseListener => runResponseListener(data)))
 
 export const getApiEndpointCreator =
   (apiConfig: {
@@ -61,11 +57,11 @@ export const getApiEndpointCreator =
           shouldRetry,
           failureMode,
           queryName: alias,
-          client: {...clientConfig, url },
+          client: { ...clientConfig, url },
           requestHeaders,
           query,
           variables,
-          errorsParser: apiConfig.errorsParser
+          errorsParser: apiConfig.errorsParser,
         })
 
         const response = { data, warnings, headers, status, errors }
@@ -78,7 +74,7 @@ export const getApiEndpointCreator =
           })
         }
 
-        executeListeners(apiConfig.responseListeners,{
+        executeListeners(apiConfig.responseListeners, {
           ...responseListenerData,
           response,
         })

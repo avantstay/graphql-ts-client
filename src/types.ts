@@ -24,30 +24,31 @@ type ArrayElement<ArrayType extends readonly unknown[]> = ArrayType extends read
 type Primitive = Date | string | number | boolean | null | undefined
 
 // Projection is the resulting type of Selection (type generated out of a query) applied to Base (generated graphql type)
-export type Projection<Selection, Base, E = never> = Base extends Array<any>
-  ? ArrayElement<Base> extends Primitive | E
-    ? ArrayElement<Base>[]
-    : Projection<Defined<Selection>, ArrayElement<Base>, E>[]
-  : Base extends Primitive | E
-  ? // Is primitive and extends undefined
-    Selection extends undefined
-    ? Base | undefined
-    : Base
-  : {
-      [k in keyof Selection & keyof Base]: Selection[k] extends boolean
-        ? Base[k]
-        : Base[k] extends Array<infer A>
-        ? Projection<Defined<Selection[k]>, A, E>[]
-        : Projection<Defined<Selection[k]>, Base[k], E>
-    }
+export type Projection<Selection, Base, E = never> =
+  Base extends Array<any>
+    ? ArrayElement<Base> extends Primitive | E
+      ? ArrayElement<Base>[]
+      : Projection<Defined<Selection>, ArrayElement<Base>, E>[]
+    : Base extends Primitive | E
+      ? // Is primitive and extends undefined
+        Selection extends undefined
+        ? Base | undefined
+        : Base
+      : {
+          [k in keyof Selection & keyof Base]: Selection[k] extends boolean
+            ? Base[k]
+            : Base[k] extends Array<infer A>
+              ? Projection<Defined<Selection[k]>, A, E>[]
+              : Projection<Defined<Selection[k]>, Base[k], E>
+        }
 
 export type Unpacked<T> = T extends (infer U)[]
   ? U
   : T extends (...args: any[]) => infer U
-  ? U
-  : T extends Promise<infer U>
-  ? U
-  : T
+    ? U
+    : T extends Promise<infer U>
+      ? U
+      : T
 
 export type Replacement<M extends [any, any], T> = M extends any ? ([T] extends [M[0]] ? M[1] : never) : never
 
@@ -59,8 +60,8 @@ export type DeepReplace<T, Ignore, M extends [any, any]> = {
         : T[P]
       : Replacement<M, T[P]>
     : T[P] extends object
-    ? DeepReplace<T[P], Ignore, M>
-    : T[P]
+      ? DeepReplace<T[P], Ignore, M>
+      : T[P]
 }
 
 export type RawEndpoint<I, O, E> = <S extends I>(
@@ -96,6 +97,12 @@ export type LogInfo = {
   response?: any
   error?: Error
   duration: number
+}
+
+export type TypescriptClientOutput = {
+  js: string
+  mjs: string
+  typings: string
 }
 
 export class GraphQLClientError extends Error {
