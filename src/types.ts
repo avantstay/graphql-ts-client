@@ -98,6 +98,12 @@ export type LogInfo = {
   duration: number
 }
 
+export type TypescriptClientOutput = {
+  js: string
+  mjs: string
+  typings: string
+}
+
 export class GraphQLClientError extends Error {
   responseData: ResponseData
 

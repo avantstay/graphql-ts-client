@@ -6,8 +6,8 @@ import * as fs from 'fs'
 import { PathLike } from 'fs'
 import {
   buildSchema,
-  graphqlSync,
   getIntrospectionQuery,
+  graphqlSync,
   IntrospectionEnumType,
   IntrospectionField,
   IntrospectionInputObjectType,
@@ -25,6 +25,7 @@ import os from 'os'
 import path from 'path'
 import * as prettier from 'prettier'
 import pkg from '../package.json'
+import { TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
@@ -314,7 +315,7 @@ type IClientOptions = {
   errorsParser?: (errors: any[]) => any
 }
 
-type FetchIntrospectionOptions = Omit< IClientOptions, 'output' | 'introspectionEndpoint'>
+type FetchIntrospectionOptions = Omit<IClientOptions, 'output' | 'introspectionEndpoint'>
 
 function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Omit<IClientOptions, 'output'>) {
   const typesHash = md5(`${JSON.stringify(options)}__${JSON.stringify(types)}`)
@@ -322,7 +323,11 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   const clientCacheFilePath = path.resolve(tempDir, clientCacheFileName)
 
   if (!options.skipCache && fs.existsSync(clientCacheFilePath)) {
-    return JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
+    const output: Partial<TypescriptClientOutput> = JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
+
+    if (output.js && output.mjs && output.typings) {
+      return output as TypescriptClientOutput
+    }
   }
 
   const queries = (<IntrospectionObjectType>types.find(it => it.name === 'Query'))?.fields || []
@@ -472,8 +477,9 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
 
     export default ${clientName}`
 
-  const output = {
+  const output: TypescriptClientOutput = {
     js: esbuild.transformSync(jsCode, { format: 'cjs', loader: 'js' }).code,
+    mjs: esbuild.transformSync(jsCode, { format: 'esm', loader: 'js' }).code,
     typings: prettier.format(typingsCode, { semi: false, parser: 'typescript' }),
   }
 
@@ -500,7 +506,7 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
         },
       }
     )
-    .catch((e) => {
+    .catch(e => {
       const errorMessage = `The GraphQL introspection request failed (${endpoint})`
       if (fs.existsSync(introspectionCacheFilePath)) {
         const cachedSchema = JSON.parse(fs.readFileSync(introspectionCacheFilePath, { encoding: 'utf8' }))
@@ -526,10 +532,11 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
   return types
 }
 
-type Client = { typings: string; js: string }
-
-function generateClient(introspectionTypes: ReadonlyArray<IntrospectionType>, {output,...restOptions}: IClientOptions): Client {
-  const { js, typings } = generateClientCode(introspectionTypes, restOptions)
+function generateClient(
+  introspectionTypes: ReadonlyArray<IntrospectionType>,
+  { output, ...restOptions }: IClientOptions
+): TypescriptClientOutput {
+  const { js, mjs, typings } = generateClientCode(introspectionTypes, restOptions)
 
   if (output && typeof output === 'string') {
     const outputDir = path.dirname(output)
@@ -540,12 +547,16 @@ function generateClient(introspectionTypes: ReadonlyArray<IntrospectionType>, {o
 
     fs.writeFileSync(output.replace(/(\.(ts|js))?$/, '.d.ts'), typings, { encoding: 'utf8' })
     fs.writeFileSync(output.replace(/(\.(ts|js))?$/, '.js'), js, { encoding: 'utf8' })
+    fs.writeFileSync(output.replace(/(\.(ts|js))?$/, '.mjs'), mjs, { encoding: 'utf8' })
   }
 
-  return { js, typings }
+  return { js, mjs, typings }
 }
 
-export async function generateTypescriptClient({ introspectionEndpoint, ...options }: IClientOptions): Promise<Client> {
+export async function generateTypescriptClient({
+  introspectionEndpoint,
+  ...options
+}: IClientOptions): Promise<TypescriptClientOutput> {
   console.log(`Generating TypeScript client (name: ${options.clientName ?? 'n/a'})`)
 
   axiosRetry(axios, { retries: 5, retryDelay: retryCount => 1000 * 2 ** retryCount })
@@ -556,14 +567,14 @@ export async function generateTypescriptClient({ introspectionEndpoint, ...optio
   })
 
   return generateClient(introspectionTypes, options)
-
 }
 
-export function generateTypescriptClientFromSDL(SDL: string, options: IClientOptions): Client {
-  console.log(`Generating TypeScript client from SDL (name: ${options.clientName ?? 'n/a'})`);
+export function generateTypescriptClientFromSDL(SDL: string, options: IClientOptions): TypescriptClientOutput {
+  console.log(`Generating TypeScript client from SDL (name: ${options.clientName ?? 'n/a'})`)
 
-  const graphqlSchemaObj = buildSchema(SDL);
-  const introspectionTypes = graphqlSync(graphqlSchemaObj, new Source(getIntrospectionQuery())).data?.__schema.types as IntrospectionType[]
+  const graphqlSchemaObj = buildSchema(SDL)
+  const introspectionTypes = graphqlSync(graphqlSchemaObj, new Source(getIntrospectionQuery())).data?.__schema
+    .types as IntrospectionType[]
 
   return generateClient(introspectionTypes, options)
 }
