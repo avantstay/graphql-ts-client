@@ -2,10 +2,10 @@ import { graphqlRequest } from './graphqlRequest'
 
 describe('GraphQLRequest', () => {
   it('Should request have proper structure', async () => {
-    let request: any;
+    let request: any
 
     const mockedAxios = {
-      post: function() {
+      post: function () {
         request = arguments
         return {
           status: 200,
@@ -19,7 +19,7 @@ describe('GraphQLRequest', () => {
       axios: mockedAxios,
       queryName: 'sampleQueryName',
       query: 'sampleQuery',
-      variables: {foo:'bar',bar:'foo'},
+      variables: { foo: 'bar', bar: 'foo' },
       client: {
         url: 'https://whatever.com',
         headers: {},
@@ -51,7 +51,6 @@ describe('GraphQLRequest', () => {
     } as any
 
     const result = await graphqlRequest({
-
       failureMode: 'loud',
       axios: mockedAxios,
       queryName: 'whatever',

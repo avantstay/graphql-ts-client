@@ -125,12 +125,12 @@ describe('Generated Client', () => {
     expect(responseData?.response.errors.length).toBeGreaterThan(0)
   })
 
-  it('should generate proper code from SDL', ()=>{
+  it('should generate proper code from SDL', () => {
     const sdlString = `
   type Query {
     hello: String
   }
-`;
-    expect(generateTypescriptClientFromSDL(sdlString, {endpoint: 'https://sample.endpoint.com/graphl'})).toMatchSnapshot()
+`
+    expect(generateTypescriptClientFromSDL(sdlString, { endpoint: 'https://sample.endpoint.com/graphl' })).toMatchSnapshot()
   })
 })

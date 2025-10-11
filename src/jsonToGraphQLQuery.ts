@@ -31,14 +31,17 @@ export function jsonToGraphQLQuery({
     parentType: kind === 'query' ? typesTree.Query : typesTree.Mutation,
   })
 
-  const variableItems = Object.values(variablesData).reduce((variablesObj, variables) => {
-    variables.forEach((variable, index) => {
-      const name = variable.update(variables.length > 1 ? index : undefined)
-      variablesObj[name] = { type: variable.type, value: variable.value }
-    })
+  const variableItems = Object.values(variablesData).reduce(
+    (variablesObj, variables) => {
+      variables.forEach((variable, index) => {
+        const name = variable.update(variables.length > 1 ? index : undefined)
+        variablesObj[name] = { type: variable.type, value: variable.value }
+      })
 
-    return variablesObj
-  }, {} as Record<string, Variable>)
+      return variablesObj
+    },
+    {} as Record<string, Variable>
+  )
 
   const variablesQuery = Object.keys(variableItems).length
     ? `(${entries(variableItems)
