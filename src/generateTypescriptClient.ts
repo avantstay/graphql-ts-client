@@ -15,7 +15,6 @@ import {
   IntrospectionObjectType,
   IntrospectionOutputTypeRef,
   IntrospectionType,
-  Source,
 } from 'graphql'
 import kebabCase from 'lodash/kebabCase'
 import orderBy from 'lodash/orderBy'
@@ -504,18 +503,18 @@ async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptio
           'Content-Type': 'application/json',
           ...headers,
         },
+        timeout: 5000,
       }
     )
     .catch(e => {
-      const errorMessage = `The GraphQL introspection request failed (${endpoint})`
       if (fs.existsSync(introspectionCacheFilePath)) {
         const cachedSchema = JSON.parse(fs.readFileSync(introspectionCacheFilePath, { encoding: 'utf8' }))
         loadedFromCache = true
-        console.warn(`Successfully restored from local cache.`)
+        console.warn(`Successfully restored (${endpoint}) from local cache.`)
         return { data: cachedSchema }
       } else {
         console.error(e)
-        return Promise.reject(errorMessage)
+        return Promise.reject(`The GraphQL introspection request failed (${endpoint})`)
       }
     })
 
@@ -573,8 +572,11 @@ export function generateTypescriptClientFromSDL(SDL: string, options: IClientOpt
   console.log(`Generating TypeScript client from SDL (name: ${options.clientName ?? 'n/a'})`)
 
   const graphqlSchemaObj = buildSchema(SDL)
-  const introspectionTypes = graphqlSync(graphqlSchemaObj, new Source(getIntrospectionQuery())).data?.__schema
-    .types as IntrospectionType[]
+  const introspectionResult = graphqlSync({
+    schema: graphqlSchemaObj,
+    source: getIntrospectionQuery(),
+  })
+  const introspectionTypes = (introspectionResult.data as any)?.__schema.types as IntrospectionType[]
 
   return generateClient(introspectionTypes, options)
 }

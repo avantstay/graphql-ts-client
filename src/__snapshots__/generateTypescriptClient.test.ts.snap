@@ -77,6 +77,58 @@ const client = {
 };
 var stdin_default = client;
 ",
+  "mjs": "import { getApiEndpointCreator } from "./endpoint";
+const formatGraphQL = (query) => query;
+const typesTree = {};
+let verbose = false;
+let headers = {};
+let url = "https://sample.endpoint.com/graphl";
+let retryConfig = {
+  max: 0,
+  before: void 0,
+  waitBeforeRetry: 0
+};
+let responseListeners = [];
+let errorsParser = void 0;
+let apiEndpoint = getApiEndpointCreator({
+  getClient: () => ({ url, headers, retryConfig }),
+  responseListeners,
+  maxAge: 3e4,
+  verbose,
+  typesTree,
+  formatGraphQL,
+  errorsParser
+});
+const client = {
+  addResponseListener: (listener) => responseListeners.push(listener),
+  setHeader: (key, value) => {
+    headers[key] = value;
+  },
+  setHeaders: (newHeaders) => {
+    headers = newHeaders;
+  },
+  setRetryConfig: (options) => {
+    if (!Number.isInteger(options.max) || options.max < 0) {
+      throw new Error("retryOptions.max should be a non-negative integer");
+    }
+    retryConfig = {
+      max: options.max,
+      waitBeforeRetry: options.waitBeforeRetry,
+      before: options.before
+    };
+  },
+  setUrl: (_url) => url = _url,
+  queries: {
+    hello: apiEndpoint("query", "hello")
+  },
+  mutations: {}
+};
+var stdin_default = client;
+export {
+  client,
+  stdin_default as default
+};
+",
   "typings": "// noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
 import { DeepRequired } from "ts-essentials"
 import { Maybe, IResponseListener, Endpoint } from "."

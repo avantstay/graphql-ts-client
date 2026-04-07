@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "10.9.0",
+  "version": "12.0.0",
   "description": "GraphQL Typescript Client Generator",
   "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {
@@ -35,7 +35,7 @@
     "src"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/endpoint.ts --dts --format cjs,esm",
+    "build": "yarn tsup src/index.ts src/endpoint.ts --dts --format cjs,esm",
     "prepublishOnly": "yarn build",
     "test": "cross-env GQL_CLIENT_DIST_PATH='.' jest --watch"
   },
@@ -45,7 +45,7 @@
     "axios-retry": "^3.2.4",
     "case": "^1.6.3",
     "esbuild": "^0.13.14",
-    "graphql": "^15.6.0",
+    "graphql": "^16.13.2",
     "lodash": "^4.17.21",
     "md5": "^2.3.0",
     "moize": "^6.1.0",
