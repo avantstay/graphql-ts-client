@@ -16,9 +16,9 @@ import {
   IntrospectionOutputTypeRef,
   IntrospectionType,
 } from 'graphql'
-import kebabCase from 'lodash/kebabCase'
-import orderBy from 'lodash/orderBy'
-import set from 'lodash/set'
+import kebabCase from 'lodash/kebabCase.js'
+import orderBy from 'lodash/orderBy.js'
+import set from 'lodash/set.js'
 import md5 from 'md5'
 import os from 'os'
 import path from 'path'

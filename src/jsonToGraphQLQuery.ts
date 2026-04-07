@@ -1,11 +1,10 @@
-import omit from 'lodash/omit'
+import cloneDeep from 'lodash/cloneDeep.js'
+import fromEntries from 'lodash/fromPairs.js'
+import omit from 'lodash/omit.js'
+import entries from 'lodash/toPairs.js'
 
 const VAR_PREFIX = '@@VAR@@'
 const VAR_PREFIX_LENGTH = VAR_PREFIX.length
-
-const fromEntries: (arr: [string, any][]) => { [key: string]: any } = require('lodash/fromPairs')
-const entries: (obj: { [key: string]: any }) => [string, any][] = require('lodash/toPairs')
-const cloneDeep = require('lodash/cloneDeep')
 
 type ExtractedVariables = Record<string, (Variable & { name: string; update: (index?: number) => string })[]>
 type Variable = { type: any; value: any }
