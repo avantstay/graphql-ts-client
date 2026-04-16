@@ -11,6 +11,14 @@ export type ResponseData = {
   }[]
 }
 
+export type RequestListenerInfo = {
+  queryName: string
+  query: string
+  variables: any
+  headers: { [key: string]: string }
+}
+export type IRequestListener = (info: RequestListenerInfo) => void | Promise<void>
+
 export type ResponseListenerInfo = {
   queryName: string
   query: string

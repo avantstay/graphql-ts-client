@@ -376,11 +376,13 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       before: undefined,
       waitBeforeRetry: 0
     }
+    let requestListeners = []
     let responseListeners = []
     let errorsParser = ${options.errorsParser}
     // noinspection JSUnusedLocalSymbols
     let apiEndpoint = getApiEndpointCreator({
       getClient: () => ({ url, headers, retryConfig }),
+      requestListeners,
       responseListeners,
       maxAge: 30000,
       verbose,
@@ -390,6 +392,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
     })
 
     export const ${clientName} = {
+      addRequestListener: (listener) => requestListeners.push(listener),
       addResponseListener: (listener) => responseListeners.push(
         listener),
       setHeader: (key, value) => {
@@ -424,7 +427,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   const typingsCode = `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
     import { DeepRequired } from 'ts-essentials'
-    import { Maybe, IResponseListener, Endpoint } from '${graphqlTsClientPath}'
+    import { Maybe, IRequestListener, IResponseListener, Endpoint } from '${graphqlTsClientPath}'
 
     // Scalars
     export type IDate = string | Date
@@ -461,6 +464,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       .join('\n')}
     
     export declare const ${clientName}: {
+      addRequestListener: (listener: IRequestListener) => void
       addResponseListener: (listener: IResponseListener) => void
       setHeader: (key: string, value: string) => void
       setHeaders: (newHeaders: { [k: string]: string }) => void,
