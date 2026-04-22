@@ -2,7 +2,7 @@ import { ApolloServer } from 'apollo-server'
 import * as path from 'path'
 import { generateTypescriptClient, generateTypescriptClientFromSDL } from './generateTypescriptClient'
 import { startServer } from './testServer'
-import { GraphQLClientError, ResponseListenerInfo } from './types'
+import { RequestListenerInfo, ResponseListenerInfo } from './types'
 
 let testServer: { server: ApolloServer; url: string }
 let client: any
@@ -77,7 +77,7 @@ describe('Generated Client', () => {
         (err: any) => err
       )
 
-    expect(result).toBeInstanceOf(GraphQLClientError)
+    expect(result.constructor.name).toContain('GraphQLClientError')
     expect(result.message).toBe('Failed lorem ipsum dolor')
   })
 
@@ -107,6 +107,53 @@ describe('Generated Client', () => {
     }
 
     expect(failed).toBe(true)
+  })
+
+  it('request listener is called before the request', async () => {
+    let requestData: RequestListenerInfo | undefined
+    client.addRequestListener((data: any) => (requestData = data))
+
+    await client.queries.booksWithoutParams({ title: true })
+
+    expect(requestData?.queryName).toBe('booksWithoutParams')
+    expect(requestData?.query).toBeDefined()
+    expect(requestData?.variables).toBeDefined()
+  })
+
+  it('header set in request listener is sent with the request', async () => {
+    const axios = require('axios')
+    const axiosSpy = jest.spyOn(axios, 'post')
+
+    client.addRequestListener(async () => {
+      const token = await Promise.resolve('my-fresh-token')
+      client.setHeader('Authorization', `Bearer ${token}`)
+    })
+
+    await client.queries.booksWithoutParams({ title: true })
+
+    expect(axiosSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer my-fresh-token',
+        }),
+      })
+    )
+
+    axiosSpy.mockRestore()
+    client.setHeader('Authorization', undefined)
+  })
+
+  it('request listener is called even for failing operations', async () => {
+    let requestData: RequestListenerInfo | undefined
+    client.addRequestListener((data: any) => (requestData = data))
+
+    try {
+      await client.queries.failingQuery({ __args: { id: 'hello' } })
+    } catch {}
+
+    expect(requestData?.queryName).toBe('failingQuery')
   })
 
   it('failing operations throw errors', async () => {

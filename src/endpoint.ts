@@ -2,7 +2,15 @@ import memoize from 'moize'
 import { graphqlRequest } from './graphqlRequest'
 import { jsonToGraphQLQuery } from './jsonToGraphQLQuery'
 import { logRequest } from './logging'
-import { ClientConfig, Endpoint, GraphQLClientError, IResponseListener, Projection, ResponseListenerInfo } from './types'
+import {
+  ClientConfig,
+  Endpoint,
+  GraphQLClientError,
+  IRequestListener,
+  IResponseListener,
+  Projection,
+  ResponseListenerInfo,
+} from './types'
 
 const executeListeners = (listeners: IResponseListener[], data: ResponseListenerInfo) =>
   setTimeout(() => listeners.forEach(runResponseListener => runResponseListener(data)))
@@ -10,6 +18,7 @@ const executeListeners = (listeners: IResponseListener[], data: ResponseListener
 export const getApiEndpointCreator =
   (apiConfig: {
     getClient: () => ClientConfig
+    requestListeners: IRequestListener[]
     responseListeners: IResponseListener[]
     typesTree: any
     maxAge: number
@@ -28,10 +37,7 @@ export const getApiEndpointCreator =
       headers: any
       status: any
     }> => {
-      const clientConfig = apiConfig.getClient()
-
       const alias = (jsonQuery as any)?.__alias ?? queryName
-      const url = (jsonQuery as any)?.__url ?? clientConfig.url
       const shouldRetry = (jsonQuery as any)?.__retry ?? true
       const requestHeaders = (jsonQuery as any)?.__headers ?? {}
       const { query, variables } = jsonToGraphQLQuery({ kind, queryName, jsonQuery, typesTree: apiConfig.typesTree })
@@ -46,11 +52,17 @@ export const getApiEndpointCreator =
         variables,
       }
 
-      const responseListenerData = {
+      const listenerData = {
         queryName: alias,
         query: apiConfig.formatGraphQL(query),
         variables,
+        headers: { ...requestHeaders },
       }
+
+      await Promise.all(apiConfig.requestListeners.map(listener => listener(listenerData)))
+
+      const clientConfig = apiConfig.getClient()
+      const url = (jsonQuery as any)?.__url ?? clientConfig.url
 
       try {
         const { data, errors, warnings, headers, status } = await graphqlRequest({
@@ -58,7 +70,7 @@ export const getApiEndpointCreator =
           failureMode,
           queryName: alias,
           client: { ...clientConfig, url },
-          requestHeaders,
+          requestHeaders: listenerData.headers,
           query,
           variables,
           errorsParser: apiConfig.errorsParser,
@@ -75,7 +87,7 @@ export const getApiEndpointCreator =
         }
 
         executeListeners(apiConfig.responseListeners, {
-          ...responseListenerData,
+          ...listenerData,
           response,
         })
 
@@ -90,7 +102,7 @@ export const getApiEndpointCreator =
         }
 
         executeListeners(apiConfig.responseListeners, {
-          ...responseListenerData,
+          ...listenerData,
           response: (error as GraphQLClientError).response,
         })
 

@@ -1,4 +1,4 @@
-import { getApiEndpointCreator } from "./endpoint";
+import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/dist/endpoint";
 import { format as formatCode } from "prettier/standalone";
 import parserGraphql from "prettier/parser-graphql";
 const formatGraphQL = (query) => formatCode(query, { parser: "graphql", plugins: [parserGraphql] });
@@ -41,10 +41,12 @@ let retryConfig = {
   before: void 0,
   waitBeforeRetry: 0
 };
+let requestListeners = [];
 let responseListeners = [];
 let errorsParser = void 0;
 let apiEndpoint = getApiEndpointCreator({
   getClient: () => ({ url, headers, retryConfig }),
+  requestListeners,
   responseListeners,
   maxAge: 3e4,
   verbose,
@@ -53,6 +55,7 @@ let apiEndpoint = getApiEndpointCreator({
   errorsParser
 });
 const myApiClient = {
+  addRequestListener: (listener) => requestListeners.push(listener),
   addResponseListener: (listener) => responseListeners.push(listener),
   setHeader: (key, value) => {
     headers[key] = value;
