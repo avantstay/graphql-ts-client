@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "12.1.0",
+  "version": "12.2.0",
   "description": "GraphQL Typescript Client Generator",
   "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {

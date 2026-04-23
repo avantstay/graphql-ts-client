@@ -392,9 +392,28 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
     })
 
     export const ${clientName} = {
-      addRequestListener: (listener) => requestListeners.push(listener),
-      addResponseListener: (listener) => responseListeners.push(
-        listener),
+      addRequestListener: (listener) => {
+        requestListeners.push(listener)
+        return () => {
+          const index = requestListeners.indexOf(listener)
+          if (index > -1) requestListeners.splice(index, 1)
+        }
+      },
+      removeRequestListener: (listener) => {
+        const index = requestListeners.indexOf(listener)
+        if (index > -1) requestListeners.splice(index, 1)
+      },
+      addResponseListener: (listener) => {
+        responseListeners.push(listener)
+        return () => {
+          const index = responseListeners.indexOf(listener)
+          if (index > -1) responseListeners.splice(index, 1)
+        }
+      },
+      removeResponseListener: (listener) => {
+        const index = responseListeners.indexOf(listener)
+        if (index > -1) responseListeners.splice(index, 1)
+      },
       setHeader: (key, value) => {
         headers[key] = value
       },
@@ -464,8 +483,10 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       .join('\n')}
     
     export declare const ${clientName}: {
-      addRequestListener: (listener: IRequestListener) => void
-      addResponseListener: (listener: IResponseListener) => void
+      addRequestListener: (listener: IRequestListener) => () => void
+      removeRequestListener: (listener: IRequestListener) => void
+      addResponseListener: (listener: IResponseListener) => () => void
+      removeResponseListener: (listener: IResponseListener) => void
       setHeader: (key: string, value: string) => void
       setHeaders: (newHeaders: { [k: string]: string }) => void,
       setUrl: (url: string) => void,

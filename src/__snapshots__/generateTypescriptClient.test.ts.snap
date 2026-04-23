@@ -54,8 +54,32 @@ let apiEndpoint = (0, import_endpoint.getApiEndpointCreator)({
   errorsParser
 });
 const client = {
-  addRequestListener: (listener) => requestListeners.push(listener),
-  addResponseListener: (listener) => responseListeners.push(listener),
+  addRequestListener: (listener) => {
+    requestListeners.push(listener);
+    return () => {
+      const index = requestListeners.indexOf(listener);
+      if (index > -1)
+        requestListeners.splice(index, 1);
+    };
+  },
+  removeRequestListener: (listener) => {
+    const index = requestListeners.indexOf(listener);
+    if (index > -1)
+      requestListeners.splice(index, 1);
+  },
+  addResponseListener: (listener) => {
+    responseListeners.push(listener);
+    return () => {
+      const index = responseListeners.indexOf(listener);
+      if (index > -1)
+        responseListeners.splice(index, 1);
+    };
+  },
+  removeResponseListener: (listener) => {
+    const index = responseListeners.indexOf(listener);
+    if (index > -1)
+      responseListeners.splice(index, 1);
+  },
   setHeader: (key, value) => {
     headers[key] = value;
   },
@@ -105,8 +129,32 @@ let apiEndpoint = getApiEndpointCreator({
   errorsParser
 });
 const client = {
-  addRequestListener: (listener) => requestListeners.push(listener),
-  addResponseListener: (listener) => responseListeners.push(listener),
+  addRequestListener: (listener) => {
+    requestListeners.push(listener);
+    return () => {
+      const index = requestListeners.indexOf(listener);
+      if (index > -1)
+        requestListeners.splice(index, 1);
+    };
+  },
+  removeRequestListener: (listener) => {
+    const index = requestListeners.indexOf(listener);
+    if (index > -1)
+      requestListeners.splice(index, 1);
+  },
+  addResponseListener: (listener) => {
+    responseListeners.push(listener);
+    return () => {
+      const index = responseListeners.indexOf(listener);
+      if (index > -1)
+        responseListeners.splice(index, 1);
+    };
+  },
+  removeResponseListener: (listener) => {
+    const index = responseListeners.indexOf(listener);
+    if (index > -1)
+      responseListeners.splice(index, 1);
+  },
   setHeader: (key, value) => {
     headers[key] = value;
   },
@@ -167,8 +215,10 @@ export interface Query {
 // Selection Types
 
 export declare const client: {
-  addRequestListener: (listener: IRequestListener) => void
-  addResponseListener: (listener: IResponseListener) => void
+  addRequestListener: (listener: IRequestListener) => () => void
+  removeRequestListener: (listener: IRequestListener) => void
+  addResponseListener: (listener: IResponseListener) => () => void
+  removeResponseListener: (listener: IResponseListener) => void
   setHeader: (key: string, value: string) => void
   setHeaders: (newHeaders: { [k: string]: string }) => void
   setUrl: (url: string) => void

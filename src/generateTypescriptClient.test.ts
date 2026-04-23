@@ -172,6 +172,56 @@ describe('Generated Client', () => {
     expect(responseData?.response.errors.length).toBeGreaterThan(0)
   })
 
+  it('removeRequestListener removes a previously added request listener', async () => {
+    let callCount = 0
+    const listener = () => { callCount++ }
+
+    client.addRequestListener(listener)
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+
+    client.removeRequestListener(listener)
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+  })
+
+  it('removeResponseListener removes a previously added response listener', async () => {
+    let callCount = 0
+    const listener = () => { callCount++ }
+
+    client.addResponseListener(listener)
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+
+    client.removeResponseListener(listener)
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+  })
+
+  it('addRequestListener returns an unsubscribe function', async () => {
+    let callCount = 0
+    const unsubscribe = client.addRequestListener(() => { callCount++ })
+
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+
+    unsubscribe()
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+  })
+
+  it('addResponseListener returns an unsubscribe function', async () => {
+    let callCount = 0
+    const unsubscribe = client.addResponseListener(() => { callCount++ })
+
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+
+    unsubscribe()
+    await client.queries.booksWithoutParams({ title: true })
+    expect(callCount).toBe(1)
+  })
+
   it('should generate proper code from SDL', () => {
     const sdlString = `
   type Query {
