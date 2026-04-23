@@ -55,8 +55,32 @@ let apiEndpoint = getApiEndpointCreator({
   errorsParser
 });
 const myApiClient = {
-  addRequestListener: (listener) => requestListeners.push(listener),
-  addResponseListener: (listener) => responseListeners.push(listener),
+  addRequestListener: (listener) => {
+    requestListeners.push(listener);
+    return () => {
+      const index = requestListeners.indexOf(listener);
+      if (index > -1)
+        requestListeners.splice(index, 1);
+    };
+  },
+  removeRequestListener: (listener) => {
+    const index = requestListeners.indexOf(listener);
+    if (index > -1)
+      requestListeners.splice(index, 1);
+  },
+  addResponseListener: (listener) => {
+    responseListeners.push(listener);
+    return () => {
+      const index = responseListeners.indexOf(listener);
+      if (index > -1)
+        responseListeners.splice(index, 1);
+    };
+  },
+  removeResponseListener: (listener) => {
+    const index = responseListeners.indexOf(listener);
+    if (index > -1)
+      responseListeners.splice(index, 1);
+  },
   setHeader: (key, value) => {
     headers[key] = value;
   },
