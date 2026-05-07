@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "12.2.0",
+  "version": "12.3.0",
   "description": "GraphQL Typescript Client Generator",
   "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {
@@ -17,6 +17,16 @@
   ],
   "exports": {
     ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./endpoint": {
+      "import": "./dist/endpoint.mjs",
+      "require": "./dist/endpoint.js",
+      "types": "./dist/endpoint.d.ts"
+    },
+    "./dist": {
       "import": "./dist/index.mjs",
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"

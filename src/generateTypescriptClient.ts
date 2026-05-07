@@ -28,7 +28,7 @@ import { TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
-const graphqlTsClientPath = process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client/dist'
+const graphqlTsClientPath = process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
 
 function gqlScalarToTypescript(gqlType: string) {
   if (/(int|long|double|decimal|float)/i.test(gqlType)) return 'number'
