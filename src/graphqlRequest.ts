@@ -55,7 +55,8 @@ export async function graphqlRequest({
       }
     )
 
-    let { data, errors, warnings } = responseData
+    let { data, errors } = responseData
+    const warnings = responseData.extensions?.warnings ?? responseData.warnings
 
     if (status >= 400 && !errors?.length) {
       errors = [{ message: `Request "${queryName}" failed with status ${status}` }]
