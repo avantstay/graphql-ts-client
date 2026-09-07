@@ -43,4 +43,9 @@ jobs:
           fi
       - name: Publish
         if: steps.version.outputs.publish == 'true'
-        run: npm publish --access public
+        # Prerelease versions (13.0.0-rc.1) go under the `next` tag so `latest` stays on the stable line.
+        run: |
+          case "${{ steps.version.outputs.version }}" in
+            *-*) npm publish --access public --tag next ;;
+            *)   npm publish --access public ;;
+          esac

@@ -80,6 +80,6 @@ async function somewhereOverTheRainbow() {
 ## Releasing
 
 1. Open a PR that bumps `version` in `package.json` and get it reviewed and merged into `master`.
-2. In GitHub, go to **Actions → Publish to npm → Run workflow** on `master`. The job runs the tests, skips if that version is already on npm, and otherwise publishes with npm trusted publishing (no token; provenance is attached automatically).
+2. In GitHub, go to **Actions → Publish to npm → Run workflow** on `master`. The job runs the tests, skips if that version is already on npm, and otherwise publishes with npm trusted publishing (no token; provenance is attached automatically). Versions containing `-` (release candidates) publish under the `next` dist-tag.
 
 CI (`.github/workflows/ci.yml`) runs the build and tests on every PR.
