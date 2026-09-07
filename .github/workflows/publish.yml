@@ -1,0 +1,46 @@
+name: Publish to npm
+
+# Manual only. Run it from the Actions tab on master after the release PR is reviewed and merged.
+# Auth is npm trusted publishing (OIDC): no NPM_TOKEN secret, provenance attached automatically.
+# The trusted publisher on npmjs.com must point at this repository and the file name "publish.yml".
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: yarn
+      # Trusted publishing needs npm 11.5.1+; Node 24 ships an older 11.x.
+      - run: npm install -g npm@latest
+      - run: yarn install --frozen-lockfile
+      - run: yarn jest --ci
+        env:
+          GQL_CLIENT_DIST_PATH: .
+      - name: Skip if this version is already on npm
+        id: version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already published; nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public
