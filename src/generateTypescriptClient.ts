@@ -22,13 +22,15 @@ import set from 'lodash/set.js'
 import md5 from 'md5'
 import os from 'os'
 import path from 'path'
-import * as prettier from 'prettier'
+import prettier from 'prettier'
 import pkg from '../package.json'
 import { TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
-const graphqlTsClientPath = process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
+function graphqlTsClientPath() {
+  return process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
+}
 
 function gqlScalarToTypescript(gqlType: string) {
   if (/(int|long|double|decimal|float)/i.test(gqlType)) return 'number'
@@ -144,18 +146,26 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
   })
 
   const argsType = endpoint.args && endpoint.args.length ? getArgsType(endpoint) : null
+  // Built as a filtered array so an option that does not apply to this kind leaves no blank line behind.
+  const inputTypeLines = [
+    '__headers?: {[key: string]: string};',
+    '__retry?: boolean;',
+    '__alias?: string;',
+    '__url?: string;',
+    '__require?: string[];',
+    kind === 'mutation' ? '__sources?: MutationSources;' : null,
+    argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : null,
+  ].filter(Boolean)
   const inputType = `{
-    __headers?: {[key: string]: string};
-    __retry?: boolean;
-    __alias?: string;
-    __url?: string;
-    ${argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : ''}
+    ${inputTypeLines.join('\n    ')}
   }${selectionType ? ` & ${selectionType}` : ''}`
 
   const outputType = gqlTypeToTypescript(endpoint.type, { required: true })
 
+  const endpointTypeName = kind === 'mutation' ? 'MutationEndpoint' : 'Endpoint'
+
   return codeOutputType === 'ts'
-    ? `${endpoint.name}: Endpoint<${inputType}, ${outputType}, AllEnums>`
+    ? `${endpoint.name}: ${endpointTypeName}<${inputType}, ${outputType}, AllEnums>`
     : `${endpoint.name}: apiEndpoint('${kind}', '${endpoint.name}')`
 }
 
@@ -349,7 +359,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   // language=JavaScript
   const jsCode = `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols
-    import { getApiEndpointCreator } from '${graphqlTsClientPath}/endpoint'
+    import { getApiEndpointCreator } from '${graphqlTsClientPath()}/endpoint'
     
     ${
       options.formatGraphQL || options.verbose
@@ -446,7 +456,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   const typingsCode = `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
     import { DeepRequired } from 'ts-essentials'
-    import { Maybe, IRequestListener, IResponseListener, Endpoint } from '${graphqlTsClientPath}'
+    import { Maybe, IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources } from '${graphqlTsClientPath()}'
 
     // Scalars
     export type IDate = string | Date

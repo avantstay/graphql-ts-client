@@ -174,7 +174,9 @@ describe('Generated Client', () => {
 
   it('removeRequestListener removes a previously added request listener', async () => {
     let callCount = 0
-    const listener = () => { callCount++ }
+    const listener = () => {
+      callCount++
+    }
 
     client.addRequestListener(listener)
     await client.queries.booksWithoutParams({ title: true })
@@ -187,7 +189,9 @@ describe('Generated Client', () => {
 
   it('removeResponseListener removes a previously added response listener', async () => {
     let callCount = 0
-    const listener = () => { callCount++ }
+    const listener = () => {
+      callCount++
+    }
 
     client.addResponseListener(listener)
     await client.queries.booksWithoutParams({ title: true })
@@ -200,7 +204,9 @@ describe('Generated Client', () => {
 
   it('addRequestListener returns an unsubscribe function', async () => {
     let callCount = 0
-    const unsubscribe = client.addRequestListener(() => { callCount++ })
+    const unsubscribe = client.addRequestListener(() => {
+      callCount++
+    })
 
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
@@ -212,7 +218,9 @@ describe('Generated Client', () => {
 
   it('addResponseListener returns an unsubscribe function', async () => {
     let callCount = 0
-    const unsubscribe = client.addResponseListener(() => { callCount++ })
+    const unsubscribe = client.addResponseListener(() => {
+      callCount++
+    })
 
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
@@ -228,6 +236,46 @@ describe('Generated Client', () => {
     hello: String
   }
 `
-    expect(generateTypescriptClientFromSDL(sdlString, { endpoint: 'https://sample.endpoint.com/graphl' })).toMatchSnapshot()
+    // The snapshot is the only guard on the module specifier every generated client imports from, so it
+    // must record the published one. The rest of the suite runs with GQL_CLIENT_DIST_PATH pointed at the
+    // local build; unset it just for this call and restore it afterwards.
+    const previousDistPath = process.env.GQL_CLIENT_DIST_PATH
+    delete process.env.GQL_CLIENT_DIST_PATH
+    try {
+      expect(
+        generateTypescriptClientFromSDL(sdlString, { endpoint: 'https://sample.endpoint.com/graphl', skipCache: true })
+      ).toMatchSnapshot()
+    } finally {
+      if (previousDistPath === undefined) delete process.env.GQL_CLIENT_DIST_PATH
+      else process.env.GQL_CLIENT_DIST_PATH = previousDistPath
+    }
+  })
+})
+
+describe('v13 generator output', () => {
+  const sdl = `
+    type Query { user(id: ID!): User! }
+    type Mutation { updateUser(input: String!): User }
+    type User { id: ID!, name: String, rooms: [Room!]!, tags: [String]!, photos: [Photo] }
+    type Room { id: ID!, beds: Int! }
+    type Photo { url: String! }
+  `
+  const output = generateTypescriptClientFromSDL(sdl, {
+    endpoint: 'https://sample.endpoint.com/graphql',
+    clientName: 'sample',
+    skipCache: true,
+  })
+
+  it('declares call options and MutationEndpoint in typings', () => {
+    expect(output.typings).toContain('__require?: string[]')
+    expect(output.typings).toContain('__sources?: MutationSources')
+    expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
+    expect(output.typings).toMatch(/user: Endpoint</)
+    // prettier wraps this import onto multiple lines once MutationEndpoint/MutationSources are added
+    // (it exceeds the print width), so match the identifiers regardless of line breaks rather than
+    // a single-line literal.
+    expect(output.typings).toMatch(
+      /import\s*{\s*Maybe,\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
+    )
   })
 })

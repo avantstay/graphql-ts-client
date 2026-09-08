@@ -29,7 +29,7 @@ __export(exports, {
   client: () => client,
   default: () => stdin_default
 });
-var import_endpoint = __toModule(require("@avantstay/graphql-ts-client/dist/endpoint"));
+var import_endpoint = __toModule(require("@avantstay/graphql-ts-client/endpoint"));
 const formatGraphQL = (query) => query;
 const typesTree = {};
 let verbose = false;
@@ -104,7 +104,7 @@ const client = {
 };
 var stdin_default = client;
 ",
-  "mjs": "import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/dist/endpoint";
+  "mjs": "import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/endpoint";
 const formatGraphQL = (query) => query;
 const typesTree = {};
 let verbose = false;
@@ -190,7 +190,9 @@ import {
   IRequestListener,
   IResponseListener,
   Endpoint,
-} from "@avantstay/graphql-ts-client/dist"
+  MutationEndpoint,
+  MutationSources,
+} from "@avantstay/graphql-ts-client"
 
 // Scalars
 export type IDate = string | Date
@@ -234,6 +236,7 @@ export declare const client: {
         __retry?: boolean
         __alias?: string
         __url?: string
+        __require?: string[]
       },
       string,
       AllEnums
