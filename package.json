@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "12.3.1",
+  "version": "13.0.0-rc.1",
   "description": "GraphQL Typescript Client Generator",
   "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {
@@ -11,43 +11,43 @@
     "url": "git+https://github.com/avantstay/graphql-ts-client.git"
   },
   "license": "MIT",
-  "author": "Wellington Guimaraes",
+  "author": "AvantStay",
   "contributors": [
     "Felipe Pinheiro <felipe.pinheiro.90@hotmail.com>"
   ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./endpoint": {
+      "types": "./dist/endpoint.d.ts",
       "import": "./dist/endpoint.mjs",
-      "require": "./dist/endpoint.js",
-      "types": "./dist/endpoint.d.ts"
+      "require": "./dist/endpoint.js"
     },
     "./dist": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./dist/endpoint": {
+      "types": "./dist/endpoint.d.ts",
       "import": "./dist/endpoint.mjs",
-      "require": "./dist/endpoint.js",
-      "types": "./dist/endpoint.d.ts"
+      "require": "./dist/endpoint.js"
     }
   },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "typings": "dist/index.d.ts",
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "scripts": {
-    "build": "yarn tsup src/index.ts src/endpoint.ts --dts --format cjs,esm",
+    "build": "rm -rf dist && yarn tsup src/index.ts src/endpoint.ts --dts --format cjs,esm",
     "prepublishOnly": "yarn build",
-    "test": "cross-env GQL_CLIENT_DIST_PATH='.' jest --watch"
+    "test": "cross-env GQL_CLIENT_DIST_PATH='.' jest --watch",
+    "test:dist": "yarn build && node scripts/smoke-dist.mjs"
   },
   "dependencies": {
     "@types/md5": "^2.3.2",
@@ -67,7 +67,6 @@
     "@babel/preset-env": "^7.20.2",
     "@babel/preset-typescript": "^7.18.6",
     "@jest/globals": "^29.3.1",
-    "@size-limit/preset-small-lib": "^5.0.4",
     "@swc/core": "^1.3.22",
     "@types/graphql": "^14.5.0",
     "@types/jest": "^29.2.4",
@@ -90,15 +89,5 @@
   },
   "publishConfig": {
     "@avantstay:registry": "https://registry.npmjs.org/"
-  },
-  "size-limit": [
-    {
-      "path": "dist/graphql-ts-client.cjs.production.min.js",
-      "limit": "10 KB"
-    },
-    {
-      "path": "dist/graphql-ts-client.esm.js",
-      "limit": "10 KB"
-    }
-  ]
+  }
 }
