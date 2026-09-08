@@ -8,6 +8,7 @@ const errors = [{ message: 'Cannot modify booking', extensions: { code: 'SERVICE
 
 const requestOptions = {
   shouldRetry: false,
+  kind: 'query' as const,
   queryName: 'booking',
   query: 'mutation booking { booking }',
   variables: {},

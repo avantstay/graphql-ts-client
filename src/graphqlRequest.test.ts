@@ -17,6 +17,7 @@ describe('GraphQLRequest', () => {
       shouldRetry: false,
       failureMode: 'loud',
       axios: mockedAxios,
+      kind: 'query',
       queryName: 'sampleQueryName',
       query: 'sampleQuery',
       variables: { foo: 'bar', bar: 'foo' },
@@ -53,6 +54,7 @@ describe('GraphQLRequest', () => {
     const result = await graphqlRequest({
       failureMode: 'loud',
       axios: mockedAxios,
+      kind: 'query',
       queryName: 'whatever',
       query: 'whatever',
       variables: {},
@@ -84,6 +86,7 @@ describe('GraphQLRequest', () => {
       shouldRetry: false,
       failureMode: 'loud',
       axios: mockedAxios,
+      kind: 'query',
       queryName: 'whatever',
       query: 'whatever',
       variables: {},
