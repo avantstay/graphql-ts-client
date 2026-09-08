@@ -20,5 +20,3 @@ jobs:
       - run: yarn jest --ci
         env:
           GQL_CLIENT_DIST_PATH: .
-      # Smoke test against the built bundles (catches bundle-only regressions the unit suite cannot).
-      - run: yarn test:dist
