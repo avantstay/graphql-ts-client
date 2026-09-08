@@ -1,6 +1,5 @@
 import cloneDeep from 'lodash/cloneDeep.js'
 import fromEntries from 'lodash/fromPairs.js'
-import omit from 'lodash/omit.js'
 import entries from 'lodash/toPairs.js'
 
 const VAR_PREFIX = '@@VAR@@'
@@ -9,20 +8,23 @@ const VAR_PREFIX_LENGTH = VAR_PREFIX.length
 type ExtractedVariables = Record<string, (Variable & { name: string; update: (index?: number) => string })[]>
 type Variable = { type: any; value: any }
 
+/** Renders a JSON selection into a GraphQL document, hoisting every `__args` value into an operation variable. */
 export function jsonToGraphQLQuery({
   kind,
   queryName,
+  alias,
   jsonQuery = {},
   typesTree,
 }: {
   kind: 'query' | 'mutation'
   queryName: string
+  alias?: string
   jsonQuery: any
   typesTree: any
 }) {
   const variablesData = {} as ExtractedVariables
-  const alias = jsonQuery.__alias
-  const newJsonQuery = cloneDeep(omit(jsonQuery, ['__alias', '__headers', '__url']))
+  const operationAlias = alias
+  const newJsonQuery = cloneDeep(jsonQuery)
 
   extractVariables({
     jsonQuery: { [queryName]: newJsonQuery },
@@ -30,17 +32,14 @@ export function jsonToGraphQLQuery({
     parentType: kind === 'query' ? typesTree.Query : typesTree.Mutation,
   })
 
-  const variableItems = Object.values(variablesData).reduce(
-    (variablesObj, variables) => {
-      variables.forEach((variable, index) => {
-        const name = variable.update(variables.length > 1 ? index : undefined)
-        variablesObj[name] = { type: variable.type, value: variable.value }
-      })
+  const variableItems = Object.values(variablesData).reduce((variablesObj, variables) => {
+    variables.forEach((variable, index) => {
+      const name = variable.update(variables.length > 1 ? index : undefined)
+      variablesObj[name] = { type: variable.type, value: variable.value }
+    })
 
-      return variablesObj
-    },
-    {} as Record<string, Variable>
-  )
+    return variablesObj
+  }, {} as Record<string, Variable>)
 
   const variablesQuery = Object.keys(variableItems).length
     ? `(${entries(variableItems)
@@ -48,9 +47,9 @@ export function jsonToGraphQLQuery({
         .join(', ')})`
     : ''
 
-  const query = `${kind} ${alias || queryName}${variablesQuery} { ${alias ? `${alias}:` : ''}${queryName}${toGraphql(
-    newJsonQuery
-  )} }`
+  const query = `${kind} ${operationAlias || queryName}${variablesQuery} { ${
+    operationAlias ? `${operationAlias}:` : ''
+  }${queryName}${toGraphql(newJsonQuery)} }`
   const variables = fromEntries(entries(variableItems).map(([k, v]: any) => [k, v.value]))
 
   return {

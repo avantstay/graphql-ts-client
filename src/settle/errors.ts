@@ -1,5 +1,6 @@
 import { PathSegment, SettledError } from './types'
 
+/** The message a subgraph error carries once its detail has been redacted. */
 export const REDACTED_MESSAGE = 'Subgraph errors redacted'
 
 type RawError = { message?: unknown; path?: unknown; extensions?: unknown; locations?: unknown }
@@ -9,9 +10,13 @@ function isPathSegment(value: unknown): value is PathSegment {
 }
 
 function normalizePath(rawPath: unknown, rootName: string): PathSegment[] | undefined {
-  if (!Array.isArray(rawPath) || !rawPath.every(isPathSegment)) return undefined
-  const [first, ...rest] = rawPath as PathSegment[]
-  return first === rootName ? rest : (rawPath as PathSegment[])
+  if (!Array.isArray(rawPath)) return undefined
+  const path: PathSegment[] = []
+  for (const segment of rawPath) {
+    if (!isPathSegment(segment)) return undefined
+    path.push(segment)
+  }
+  return path[0] === rootName ? path.slice(1) : path
 }
 
 function normalizeOne(rawError: unknown, rootName: string): SettledError | undefined {
@@ -31,7 +36,7 @@ function dedupeKey(error: SettledError): string {
   return [error.path ? error.path.join('.') : '', error.extensions?.code ?? '', error.message].join('|')
 }
 
-/** Server errors → SettledError[]. Paths lose the root field segment; duplicates collapse. */
+/** Normalises server errors into SettledError[], stripping the root field from each path and collapsing duplicates. */
 export function normalizeErrors(rawErrors: unknown, rootName: string): SettledError[] {
   if (!Array.isArray(rawErrors)) return []
   const seen = new Set<string>()

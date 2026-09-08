@@ -1,4 +1,3 @@
-import type { Classification } from './settle/classify'
 import type { FailureReason, MutationSources, Outcome, SettledResponse } from './settle/types'
 
 export type Maybe<T> = null | undefined | T
@@ -12,16 +11,11 @@ export type ResponseData = {
   errors: {
     message: string
   }[]
-  // Optional so consumers that construct a ResponseData by hand (mocked listener payloads, test doubles,
-  // hand-rolled `new GraphQLClientError({...})`) keep compiling against v12-shaped objects. Every response
-  // the client itself produces populates them; RawResponse, the raw() contract, keeps them required.
   outcome?: Outcome
   reason?: FailureReason
   failedPaths?: string[]
-  codes?: string[]
-  requestIds?: string[]
-  /** Internal: full classification, consumed by endpoint.settle(). Not part of the raw() contract. */
-  classification?: Classification
+  /** Internal: the full classification `endpoint.settle()` reads, typed `unknown` so its shape stays private. */
+  classification?: unknown
 }
 
 export type RequestListenerInfo = {
@@ -84,29 +78,36 @@ export type DeepReplace<T, Ignore, M extends [any, any]> = {
     : T[P]
 }
 
+/** What `raw()` returns: the server payload untouched, plus the outcome fields. */
 export type RawResponse<Data> = {
   data: Data
   errors: any[]
-  warnings: any[]
+  warnings?: any[]
   headers: any
-  status: any
+  status: number
   outcome: Outcome
   reason?: FailureReason
   failedPaths: string[]
-  codes: string[]
-  requestIds: string[]
 }
 
-export type CallOptions = { __require?: string[]; __sources?: MutationSources }
+/** Options `raw()` tolerates but ignores, so a `__settledSources` copied from a mutation call does not break a query's `raw()`. */
+export type CallOptions = {
+  /** The settled results this payload was built from, or `'none'`; required by `settle()` on a mutation, ignored here. */
+  __settledSources?: MutationSources
+}
 
+/** The `raw()` call signature: never throws on GraphQL errors, and reports them through the outcome fields. */
 export type RawEndpoint<I, O, E> = <S extends I>(jsonQuery?: S & CallOptions) => Promise<RawResponse<Projection<S, O, E>>>
 
-export type SettleEndpoint<I, O, E> = <S extends I>(
-  jsonQuery?: S & { __require?: string[] }
-) => Promise<SettledResponse<Projection<S, O, E>>>
+/** The `settle()` call signature for a query. */
+export type SettleEndpoint<I, O, E> = <S extends I>(jsonQuery?: S) => Promise<SettledResponse<Projection<S, O, E>>>
 
+/** The `settle()` call signature for a mutation, which requires `__settledSources`. */
 export type MutationSettleEndpoint<I, O, E> = <S extends I>(
-  jsonQuery: S & { __require?: string[]; __sources: MutationSources }
+  jsonQuery: S & {
+    /** The settled results this mutation payload was built from, or `'none'` when it was built from no query. */
+    __settledSources: MutationSources
+  }
 ) => Promise<SettledResponse<Projection<S, O, E>>>
 
 export type JsonOutput<O, ToBeIgnored> = DeepReplace<O, ToBeIgnored, [string | Date, string]>
@@ -118,9 +119,7 @@ export type Endpoint<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise<Project
   settle: SettleEndpoint<I, JsonOutput<O, E>, E>
 }
 
-// Not `Omit<Endpoint<...>, 'settle'> & {...}`: Omit is a mapped type and mapped types drop a type's call
-// signature, which would make a MutationEndpoint not callable as a function. Defined explicitly instead,
-// mirroring Endpoint's shape with `settle` replaced by MutationSettleEndpoint.
+/** An Endpoint whose `settle()` requires `__settledSources`, spelled out in full because `Omit` would drop the call signature. */
 export type MutationEndpoint<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>) & {
   memo: <S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>
   memoRaw: RawEndpoint<I, JsonOutput<O, E>, E>
@@ -128,27 +127,28 @@ export type MutationEndpoint<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise
   settle: MutationSettleEndpoint<I, JsonOutput<O, E>, E>
 }
 
-// `tsup src/index.ts src/endpoint.ts` emits two independent bundles, each embedding its own copy of these
-// classes: an error thrown from the endpoint bundle fails a plain prototype-chain `instanceof` against the
-// class imported from the index bundle. A `Symbol.for` brand plus `Symbol.hasInstance` makes the check
-// identity-based instead of prototype-based, so it holds across bundles — the same trick as SETTLED_BRAND.
 const MISSING_SOURCES_BRAND = Symbol.for('@avantstay/graphql-ts-client/MissingSourcesError')
 const GRAPHQL_CLIENT_ERROR_BRAND = Symbol.for('@avantstay/graphql-ts-client/GraphQLClientError')
 
-// The prototype-chain arm is not redundant: the build targets es5, so classes are downlevelled and every
-// constructor opens with `_classCallCheck(this, Ctor)`, i.e. `this instanceof Ctor` — evaluated before the
-// constructor body has had a chance to set the brand. A brand-only predicate makes that check fail and
-// `new GraphQLClientError(...)` throws "Cannot call a class as a function" in the built bundles.
+/** True when `value` carries `brand` or descends from `classPrototype`, so `instanceof` holds across tsup's two bundles. */
 function isBrandedInstance(value: unknown, brand: symbol, classPrototype: object): boolean {
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false
+  // The prototype arm stays because the es5 `_classCallCheck` runs `this instanceof Ctor` before the constructor sets the brand.
   return (value as any)[brand] === true || Object.prototype.isPrototypeOf.call(classPrototype, value)
 }
 
+/** Sets `error.name` non-enumerably, like `Error.prototype.name`, so it stays out of `{ ...error }` and JSON.stringify. */
+function nameError(error: Error, name: string): void {
+  Object.defineProperty(error, 'name', { value: name, enumerable: false, configurable: true, writable: true })
+}
+
+/** Thrown by `settle()` on a mutation whose `__settledSources` is missing, empty, or not a list of settled results. */
 export class MissingSourcesError extends Error {
   constructor() {
     super(
-      'settle() on a mutation requires __sources: the settled results the payload was built from, or { none: reason }; an empty array is not a source list'
+      "settle() on a mutation requires __settledSources: the settled results the payload was built from, or 'none'; an empty array or a non-settled value is not a list of sources"
     )
+    nameError(this, 'MissingSourcesError')
     Object.setPrototypeOf(this, MissingSourcesError.prototype)
     Object.defineProperty(this, MISSING_SOURCES_BRAND, { value: true, enumerable: false })
   }
@@ -193,6 +193,7 @@ export class GraphQLClientError extends Error {
   constructor(responseData: ResponseData) {
     super()
     this.responseData = responseData
+    nameError(this, 'GraphQLClientError')
     Object.setPrototypeOf(this, GraphQLClientError.prototype)
     Object.defineProperty(this, GRAPHQL_CLIENT_ERROR_BRAND, { value: true, enumerable: false })
   }

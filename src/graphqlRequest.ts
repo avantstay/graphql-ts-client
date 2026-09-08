@@ -4,6 +4,7 @@ import { ClientConfig, GraphQLClientError, ResponseData } from './types'
 
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
 
+/** Posts one GraphQL operation, retrying eligible queries, and returns the classified response. */
 export async function graphqlRequest({
   shouldRetry = true,
   axios = _axios,
@@ -15,7 +16,6 @@ export async function graphqlRequest({
   variables,
   failureMode,
   errorsParser,
-  require,
 }: {
   shouldRetry?: boolean
   failureMode: 'loud' | 'silent'
@@ -28,9 +28,8 @@ export async function graphqlRequest({
   requestHeaders?: { [_key: string]: any }
   variables: { [_key: string]: any }
   errorsParser?: (errors: any[]) => any
-  require?: string[]
 }) {
-  let lastResponse: ResponseData
+  let lastResponse: ResponseData | undefined
   // Mutations are never retried: a mutation that returned errors has an unknown server-side outcome.
   const maxRetrials = shouldRetry && kind === 'query' ? client.retryConfig.max : 0
 
@@ -56,14 +55,12 @@ export async function graphqlRequest({
       errors = [{ message: `Request "${queryName}" failed with status ${status}` }]
     }
 
-    // Classification reads `data[alias]`, the root field's value, so paths are relative to it.
     const classification = classify({
       data: data?.[queryName],
       errors,
       warnings,
-      httpStatus: typeof status === 'number' ? status : undefined,
-      operation: { kind, alias: queryName },
-      require,
+      status: typeof status === 'number' ? status : undefined,
+      rootName: queryName,
     })
 
     lastResponse = {
@@ -73,26 +70,24 @@ export async function graphqlRequest({
       headers,
       status,
       outcome: classification.outcome,
-      ...(classification.reason ? { reason: classification.reason } : {}),
+      ...(classification.outcome === 'failure' ? { reason: classification.reason } : {}),
       failedPaths: classification.failedPaths,
-      codes: classification.codes,
-      requestIds: classification.requestIds,
     } as ResponseData
-    // Internal: consumed by endpoint.settle(); kept off enumeration so listener payloads and
-    // GraphQLClientError.response don't leak it (see ResponseData in types.ts).
+    // Non-enumerable so listener payloads and GraphQLClientError.response never carry it, while settle() still reads it by name.
     Object.defineProperty(lastResponse, 'classification', { value: classification, enumerable: false })
 
     const retryable =
       classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
     if (!retryable || trial >= maxRetrials) break
-    if (typeof client.retryConfig?.before === 'function') {
+    if (typeof client.retryConfig.before === 'function') {
       await client.retryConfig.before({ queryName, query, variables, response: lastResponse })
     }
     if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
   }
 
-  if (failureMode === 'loud' && lastResponse!.errors && lastResponse!.errors?.length) {
-    throw new GraphQLClientError(lastResponse!)
+  const response = lastResponse as ResponseData
+  if (failureMode === 'loud' && response.errors?.length) {
+    throw new GraphQLClientError(response)
   }
-  return lastResponse!
+  return response
 }

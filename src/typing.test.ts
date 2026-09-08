@@ -20,13 +20,7 @@ function diagnosticsFor(sample: string): string[] {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gql-typing-'))
   createdDirectories.push(dir)
   const output = generateTypescriptClientFromSDL(sdl, { endpoint: 'https://x', clientName: 'sample', skipCache: true })
-  // The generator's `prettier.format` call doesn't load this repo's .prettierrc (no singleQuote option passed),
-  // so the emitted typings use prettier's default double-quoted import specifiers (e.g. `from "."`), not
-  // single-quoted ones. Match either quote style when rewriting the module specifier for the probe.
-  // The specifier itself depends on GQL_CLIENT_DIST_PATH: `.` when the suite runs with it set, the published
-  // `@avantstay/graphql-ts-client` when it is not. Rewrite both — an unrewritten specifier does not resolve,
-  // and because sample.d.ts is a declaration file, `skipLibCheck` would swallow that silently, leaving every
-  // imported type `any` and every probe vacuously diagnostic-free.
+  // Rewrite both possible specifiers; an unresolved one is swallowed by skipLibCheck and makes every probe vacuous.
   const clientSpecifier = /from ["'](?:\.|@avantstay\/graphql-ts-client)["']/g
   fs.writeFileSync(
     path.join(dir, 'sample.d.ts'),
@@ -34,8 +28,6 @@ function diagnosticsFor(sample: string): string[] {
   )
   const samplePath = path.join(dir, 'probe.ts')
   fs.writeFileSync(samplePath, `import { sample } from './sample'\n${sample}`)
-  // resolveJsonModule matches this repo's own tsconfig.json: pointing the probe at src/index.ts pulls in
-  // generateTypescriptClient.ts, which imports ../package.json directly.
   const program = ts.createProgram([samplePath], {
     strict: true,
     noEmit: true,
@@ -61,10 +53,16 @@ describe('generated typings', () => {
     ).toEqual([])
   })
 
-  it('rejects settle() on a mutation without __sources', () => {
+  it('rejects settle() on a mutation without __settledSources', () => {
     expect(diagnosticsFor(`sample.mutations.updateUser.settle({ __args: { input: 'x' }, id: true })`).join('\n')).toMatch(
-      /__sources/
+      /__settledSources/
     )
+  })
+
+  it("accepts settle() on a mutation with __settledSources: 'none'", () => {
+    expect(
+      diagnosticsFor(`sample.mutations.updateUser.settle({ __settledSources: 'none', __args: { input: 'x' }, id: true })`)
+    ).toEqual([])
   })
 
   it('keeps raw() additive: data typed as before, outcome available', () => {

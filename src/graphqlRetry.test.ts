@@ -9,7 +9,6 @@ function axiosReturning(responses: Array<{ status: number; data?: unknown }>) {
   return { post: async () => responses[Math.min(call++, responses.length - 1)] } as any
 }
 
-/** Same as axiosReturning, but exposes how many requests were actually made. */
 function countingAxios(responses: Array<{ status: number; data?: unknown }>) {
   const calls: number[] = []
   const axios = {
@@ -60,13 +59,12 @@ describe('retry policy', () => {
     expect(result.reason).toBe('http')
   })
 
-  it('exposes codes and requestIds on the raw result and leaves data untouched', async () => {
+  it('passes the server errors through untouched and leaves data alone', async () => {
     const data = { user: { id: 'user_1', stats: null } }
     const errors = [{ message: 'x', path: ['user', 'stats'], extensions: { code: 'SERVICE_UNAVAILABLE', requestId: 'r1' } }]
     const axios = axiosReturning([{ status: 200, data: { data, errors } }])
     const result = await graphqlRequest({ ...common, kind: 'query', axios, client: clientWithRetries(0) })
-    expect(result.codes).toEqual(['SERVICE_UNAVAILABLE'])
-    expect(result.requestIds).toEqual(['r1'])
+    expect(result.outcome).toBe('partial')
     expect(result.data).toEqual(data)
     expect(result.errors).toEqual(errors)
   })

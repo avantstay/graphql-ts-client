@@ -29,8 +29,6 @@ describe('paths', () => {
       errors: [{ message: 'x', path: ['stats', 'posts'], redacted: false }],
       failedPaths: ['stats.posts'],
       warnings: [],
-      codes: [],
-      requestIds: [],
     } as AnySettled
     expect(failedAt(result, 'stats.posts.count')).toBe(true)
     expect(failedAt(result, 'stats')).toBe(false)

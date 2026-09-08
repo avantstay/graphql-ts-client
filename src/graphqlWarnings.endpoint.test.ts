@@ -19,7 +19,11 @@ describe('Endpoint warning compatibility', () => {
       },
     })
     const endpoint = getApiEndpointCreator({
-      getClient: () => ({ url: 'https://example.invalid/graphql', headers: {}, retryConfig: { max: 0, before: () => undefined } }),
+      getClient: () => ({
+        url: 'https://example.invalid/graphql',
+        headers: {},
+        retryConfig: { max: 0, before: () => undefined },
+      }),
       requestListeners: [],
       responseListeners: [listener],
       typesTree: {},

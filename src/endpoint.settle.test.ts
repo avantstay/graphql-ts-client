@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { getApiEndpointCreator } from './endpoint'
 import { isSettled } from './settle/types'
-import { MutationEndpoint } from './types'
+import { MissingSourcesError, MutationEndpoint } from './types'
 
 const typesTree: any = {}
 typesTree.Stats = {}
@@ -46,14 +46,9 @@ describe('raw()', () => {
     jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
     const result = await user.raw({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     expect(result.data).toEqual({ id: 'user_1', stats: null })
-    expect(result).toMatchObject({ status: 200, outcome: 'partial', failedPaths: ['stats'], codes: ['SERVICE_UNAVAILABLE'] })
+    expect(result).toMatchObject({ status: 200, outcome: 'partial', failedPaths: ['stats'] })
+    expect(result.errors).toEqual(partialBody.errors)
     expect(isSettled(result)).toBe(false)
-  })
-
-  it('passes __require through and fails on a required path', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
-    const result = await user.raw({ __args: { id: 'user_1' }, __require: ['stats'], id: true, stats: { score: true } })
-    expect(result).toMatchObject({ outcome: 'failure', reason: 'required-path' })
   })
 })
 
@@ -62,7 +57,7 @@ describe('settle()', () => {
     jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
     const result = await user.settle({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     expect(isSettled(result)).toBe(true)
-    expect(result).toMatchObject({ outcome: 'partial', failedPaths: ['stats'], httpStatus: 200 })
+    expect(result).toMatchObject({ outcome: 'partial', failedPaths: ['stats'], status: 200 })
     expect(result.data).toEqual({ id: 'user_1', stats: undefined })
   })
 
@@ -95,38 +90,86 @@ describe('settle()', () => {
     expect(result.data).toEqual({ id: 'user_1', stats: undefined })
   })
 
-  it('blocks a mutation whose source is partial without sending', async () => {
-    const post = jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
+  it('blocks a mutation whose source is partial without sending, carrying its errors and warnings', async () => {
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({
+      status: 200,
+      headers: {},
+      data: { ...partialBody, extensions: { warnings: [{ message: 'Serving a stale cache', code: 'STALE_CACHE' }] } },
+    })
     const source = await user.settle({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
+    expect(source.warnings).toEqual([{ message: 'Serving a stale cache', code: 'STALE_CACHE' }])
     post.mockClear()
-    const result = await updateUser.settle({ __sources: [source], __args: { input: {} }, id: true })
+    const result = await updateUser.settle({ __settledSources: [source], __args: { input: {} }, id: true })
     expect(post).not.toHaveBeenCalled()
     expect(result).toMatchObject({ outcome: 'failure', reason: 'partial-source', failedPaths: ['stats'] })
+    expect(result.errors).toEqual(source.errors)
+    expect(result.warnings).toEqual([{ message: 'Serving a stale cache', code: 'STALE_CACHE' }])
   })
 
   it('sends a mutation when sources succeeded or are explicitly none', async () => {
     const post = jest
       .spyOn(axios, 'post')
       .mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
-    await expect(updateUser.settle({ __sources: { none: 'create form' }, id: true })).resolves.toMatchObject({
+    await expect(updateUser.settle({ __settledSources: 'none', id: true })).resolves.toMatchObject({
       outcome: 'success',
     })
     expect(post).toHaveBeenCalledTimes(1)
   })
 
-  it('throws MissingSourcesError for an empty array or blank reason on a mutation', async () => {
-    await expect(updateUser.settle({ __sources: [], id: true })).rejects.toThrow(/sources/)
-    await expect(updateUser.settle({ __sources: { none: '  ' }, id: true })).rejects.toThrow(/sources/)
-    await expect(updateUser.settle({ id: true } as any)).rejects.toThrow(/sources/)
+  it('throws MissingSourcesError for an empty array, a missing or an unrecognised __settledSources', async () => {
+    await expect(updateUser.settle({ __settledSources: [], id: true })).rejects.toThrow(MissingSourcesError)
+    await expect(updateUser.settle({ __settledSources: 'nope' as any, id: true })).rejects.toThrow(MissingSourcesError)
+    await expect(updateUser.settle({ id: true } as any)).rejects.toThrow(MissingSourcesError)
   })
 
-  it('strips __require and __sources from the document', async () => {
+  it('throws MissingSourcesError when a source did not come from settle()', async () => {
+    await expect(updateUser.settle({ __settledSources: [{ data: { a: 1 } } as any], id: true })).rejects.toThrow(
+      MissingSourcesError
+    )
+  })
+
+  it('strips __settledSources from the document', async () => {
     const post = jest
       .spyOn(axios, 'post')
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { user: { id: 'user_1' } } } })
-    await user.settle({ __args: { id: 'user_1' }, __require: ['id'], id: true })
+      .mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
+    await updateUser.settle({ __settledSources: 'none', id: true })
     const [, body] = post.mock.calls[0] as [string, { query: string }]
-    expect(body.query).not.toMatch(/__require|__sources/)
+    expect(body.query).not.toMatch(/__/)
+  })
+})
+
+describe('call options', () => {
+  it('keeps every __ option out of the document while still honouring it', async () => {
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ status: 200, headers: {}, data: { data: { aliasedUser: { id: 'user_1' } } } })
+    const result = await user.raw({
+      __args: { id: 'user_1' },
+      __alias: 'aliasedUser',
+      __retry: false,
+      __headers: { 'x-call-option': 'sent' },
+      __url: 'https://example.invalid/custom-graphql',
+      id: true,
+    })
+    const [requestUrl, body, requestConfig] = post.mock.calls[0] as [
+      string,
+      { query: string },
+      { headers: Record<string, string> }
+    ]
+    expect(body.query).not.toMatch(/__/)
+    expect(body.query).toBe('query aliasedUser($id: ID!) { aliasedUser:user(id:$id) { id } }')
+    expect(requestUrl).toBe('https://example.invalid/custom-graphql')
+    expect(requestConfig.headers).toMatchObject({ 'x-call-option': 'sent' })
+    expect(result.data).toEqual({ id: 'user_1' })
+  })
+
+  it('drops an unknown __ option but keeps __typename, a real GraphQL meta-field', async () => {
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ status: 200, headers: {}, data: { data: { user: { __typename: 'User', id: 'user_1' } } } })
+    await user.raw({ __args: { id: 'user_1' }, __someFutureOption: ['stats'], __typename: true, id: true } as any)
+    const [, body] = post.mock.calls[0] as [string, { query: string }]
+    expect(body.query).toBe('query user($id: ID!) { user(id:$id) { __typename id } }')
   })
 })
 
@@ -160,8 +203,6 @@ describe('response listeners and memo', () => {
 describe('MutationEndpoint type', () => {
   it('stays callable as a function (compile-time check)', async () => {
     jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
-    // If MutationEndpoint's call signature were ever dropped (e.g. by building it with `Omit<Endpoint<...>, ...>`,
-    // a mapped type that strips call signatures), this line would fail to typecheck under `tsc --noEmit`.
     const typed: MutationEndpoint<any, any, any> = updateUser as any
     await typed({ id: true })
     expect(typeof typed).toBe('function')

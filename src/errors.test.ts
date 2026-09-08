@@ -1,9 +1,6 @@
 import { GraphQLClientError, MissingSourcesError } from './types'
 
-// tsup emits src/index.ts and src/endpoint.ts as two independent bundles, each carrying its own copy of
-// these classes: an error thrown from one bundle has a prototype from that copy, not from the copy the
-// consumer imported. Detaching the prototype simulates exactly that — a plain prototype-chain `instanceof`
-// would be false, and only the Symbol.for brand can still recognise it.
+// Detaching the prototype simulates an error thrown from the other tsup bundle, where only the brand can identify it.
 function asForeignCopy<E extends Error>(error: E): E {
   Object.setPrototypeOf(error, Error.prototype)
   return error
@@ -37,6 +34,11 @@ describe('cross-bundle instanceof', () => {
     )
     expect((null as unknown) instanceof GraphQLClientError).toBe(false)
     expect({} instanceof MissingSourcesError).toBe(false)
+  })
+
+  it('names itself, so a logged error is not an anonymous Error', () => {
+    expect(String(new MissingSourcesError()).startsWith('MissingSourcesError:')).toBe(true)
+    expect(new GraphQLClientError({ data: null, warnings: [], headers: {}, errors: [] }).name).toBe('GraphQLClientError')
   })
 
   it('keeps the brand off enumeration', () => {

@@ -236,7 +236,6 @@ export declare const client: {
         __retry?: boolean
         __alias?: string
         __url?: string
-        __require?: string[]
       },
       string,
       AllEnums

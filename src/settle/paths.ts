@@ -1,31 +1,40 @@
 import { AnySettled, PathSegment, SettledError } from './types'
 
+/** `['rooms', 0, 'beds']` → `'rooms.0.beds'`. */
 export function pathToString(path: PathSegment[]): string {
   return path.map(segment => String(segment)).join('.')
 }
 
+/** `'rooms.0.beds'` → `['rooms', 0, 'beds']`; all-digit segments become numbers. */
 export function parsePath(text: string): PathSegment[] {
   if (text === '') return []
   return text.split('.').map(segment => (/^\d+$/.test(segment) ? Number(segment) : segment))
 }
 
-export function isPrefixPath(prefix: string, path: string): boolean {
-  return path === prefix || path.startsWith(prefix + '.')
+/** True when `descendant` is `ancestor` or lies under it, matching whole segments only (`room` is not a prefix of `rooms`). */
+export function isPrefixPath(ancestor: string, descendant: string): boolean {
+  return descendant === ancestor || descendant.startsWith(ancestor + '.')
 }
 
 export function isContainer(value: unknown): value is Record<string, unknown> | unknown[] {
   return typeof value === 'object' && value !== null
 }
 
+export function childAt(container: Record<string, unknown> | unknown[], segment: PathSegment): unknown {
+  return (container as Record<string, unknown>)[segment as string]
+}
+
+/** The value at `path`, or `undefined` if the walk leaves a container before the end. */
 export function getAtPath(value: unknown, path: PathSegment[]): unknown {
   let current: unknown = value
   for (const segment of path) {
     if (!isContainer(current)) return undefined
-    current = (current as Record<string, unknown>)[segment as string]
+    current = childAt(current, segment)
   }
   return current
 }
 
+/** Sets the value at `path` to `undefined` in place, doing nothing when a parent is missing. */
 export function setUndefinedAtPath(value: unknown, path: PathSegment[]): void {
   if (path.length === 0) return
   const parent = getAtPath(value, path.slice(0, -1))

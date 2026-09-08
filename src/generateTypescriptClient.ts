@@ -146,14 +146,14 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
   })
 
   const argsType = endpoint.args && endpoint.args.length ? getArgsType(endpoint) : null
-  // Built as a filtered array so an option that does not apply to this kind leaves no blank line behind.
   const inputTypeLines = [
     '__headers?: {[key: string]: string};',
     '__retry?: boolean;',
     '__alias?: string;',
     '__url?: string;',
-    '__require?: string[];',
-    kind === 'mutation' ? '__sources?: MutationSources;' : null,
+    kind === 'mutation'
+      ? '/** Required by settle(): the settled results this payload was built from, or \'none\'. See @avantstay/graphql-ts-client README, "Writing with settle()". */\n    __settledSources?: MutationSources;'
+      : null,
     argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : null,
   ].filter(Boolean)
   const inputType = `{

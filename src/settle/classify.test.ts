@@ -1,12 +1,11 @@
 import { applyFailedPaths, classify, toSettled } from './classify'
 
-const operation = { kind: 'query' as const, alias: 'user' }
-const base = { warnings: undefined, httpStatus: 200, operation }
+const base = { warnings: undefined, status: 200, rootName: 'user' }
 
 describe('classify', () => {
   it('success when there are no errors', () => {
     const result = classify({ ...base, data: { id: 'user_1' }, errors: [] })
-    expect(result).toMatchObject({ outcome: 'success', failedPaths: [], codes: [], requestIds: [] })
+    expect(result).toMatchObject({ outcome: 'success', failedPaths: [] })
   })
 
   it('partial when a nullable field failed; the path is relative to the root field', () => {
@@ -17,15 +16,14 @@ describe('classify', () => {
     expect(result).toMatchObject({
       outcome: 'partial',
       failedPaths: ['stats'],
-      codes: ['SERVICE_UNAVAILABLE'],
-      requestIds: ['r1'],
+      errors: [expect.objectContaining({ extensions: { code: 'SERVICE_UNAVAILABLE', requestId: 'r1' } })],
     })
     expect(result.failedSegments).toEqual([['stats']])
   })
 
   it('strips an alias root instead of the field name', () => {
     const errors = [{ message: 'x', path: ['myUser', 'stats'] }]
-    const result = classify({ ...base, operation: { ...operation, alias: 'myUser' }, data: { stats: null }, errors })
+    const result = classify({ ...base, rootName: 'myUser', data: { stats: null }, errors })
     expect(result.failedPaths).toEqual(['stats'])
   })
 
@@ -45,7 +43,7 @@ describe('classify', () => {
       outcome: 'failure',
       reason: 'no-data',
     })
-    expect(classify({ ...base, httpStatus: 500, data: undefined, errors: [] })).toMatchObject({
+    expect(classify({ ...base, status: 500, data: undefined, errors: [] })).toMatchObject({
       outcome: 'failure',
       reason: 'http',
     })
@@ -60,26 +58,17 @@ describe('classify', () => {
     ).toMatchObject({ outcome: 'partial', failedPaths: [] })
   })
 
-  it('fails with required-path when a required path or its ancestor or descendant failed', () => {
-    const errors = [{ message: 'x', path: ['user', 'stats'] }]
-    expect(classify({ ...base, data: { stats: null }, errors, require: ['stats.posts'] })).toMatchObject({
-      outcome: 'failure',
-      reason: 'required-path',
-    })
-    expect(classify({ ...base, data: { stats: null }, errors, require: ['id'] })).toMatchObject({ outcome: 'partial' })
-  })
-
-  it('dedupes codes but keeps a requestId per error, falling back to the legacy errorId', () => {
+  it('keeps every error, so codes and request ids stay readable from extensions', () => {
     const errors = [
       { message: 'x', extensions: { code: 'SERVICE_UNAVAILABLE', requestId: 'r1' } },
       { message: 'y', extensions: { code: 'SERVICE_UNAVAILABLE', errorId: 'r2' } },
     ]
     const result = classify({ ...base, data: { id: 'user_1' }, errors })
-    expect(result.codes).toEqual(['SERVICE_UNAVAILABLE'])
-    expect(result.requestIds).toEqual(['r1', 'r2'])
+    expect(result.errors.map(error => error.extensions?.code)).toEqual(['SERVICE_UNAVAILABLE', 'SERVICE_UNAVAILABLE'])
+    expect(result.errors.map(error => error.extensions?.requestId ?? error.extensions?.errorId)).toEqual(['r1', 'r2'])
   })
 
-  it('reads warnings from extensions first, then legacy', () => {
+  it('normalises warnings and drops non-array values', () => {
     expect(classify({ ...base, data: {}, errors: [], warnings: [{ message: 'w', code: 'W1' }] }).warnings).toEqual([
       { message: 'w', code: 'W1' },
     ])
@@ -104,7 +93,7 @@ describe('applyFailedPaths and toSettled', () => {
   it('builds a branded settled response', () => {
     const classification = classify({ ...base, data: { id: 'user_1' }, errors: [] })
     const settled = toSettled({ id: 'user_1' }, classification, 200)
-    expect(settled).toMatchObject({ outcome: 'success', data: { id: 'user_1' }, httpStatus: 200 })
+    expect(settled).toMatchObject({ outcome: 'success', data: { id: 'user_1' }, status: 200 })
     expect(Object.keys(settled)).not.toContain('reason')
     expect((settled as any)[Symbol.for('@avantstay/graphql-ts-client/settled')]).toBe(true)
     const failed = toSettled(null, classify({ ...base, data: null, errors: [{ message: 'x' }] }), 200)

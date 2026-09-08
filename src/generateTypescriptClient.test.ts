@@ -236,9 +236,7 @@ describe('Generated Client', () => {
     hello: String
   }
 `
-    // The snapshot is the only guard on the module specifier every generated client imports from, so it
-    // must record the published one. The rest of the suite runs with GQL_CLIENT_DIST_PATH pointed at the
-    // local build; unset it just for this call and restore it afterwards.
+    // Unset GQL_CLIENT_DIST_PATH so the snapshot records the published module specifier.
     const previousDistPath = process.env.GQL_CLIENT_DIST_PATH
     delete process.env.GQL_CLIENT_DIST_PATH
     try {
@@ -267,13 +265,12 @@ describe('v13 generator output', () => {
   })
 
   it('declares call options and MutationEndpoint in typings', () => {
-    expect(output.typings).toContain('__require?: string[]')
-    expect(output.typings).toContain('__sources?: MutationSources')
+    expect(output.typings).toContain('__settledSources?: MutationSources')
+    expect(output.typings).toContain(
+      '/** Required by settle(): the settled results this payload was built from, or \'none\'. See @avantstay/graphql-ts-client README, "Writing with settle()". */'
+    )
     expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
     expect(output.typings).toMatch(/user: Endpoint</)
-    // prettier wraps this import onto multiple lines once MutationEndpoint/MutationSources are added
-    // (it exceeds the print width), so match the identifiers regardless of line breaks rather than
-    // a single-line literal.
     expect(output.typings).toMatch(
       /import\s*{\s*Maybe,\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
     )
