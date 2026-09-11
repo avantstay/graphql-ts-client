@@ -27,7 +27,7 @@ type SettledBase = {
   status?: number
 }
 
-/** Every requested field resolved, so `errors` and `failedPaths` are empty by construction. */
+/** Every requested field resolved, so `errors` and `failedPaths` are empty by construction, and the empty tuples make that checkable. */
 export type SettledSuccess<Data> = SettledBase & { outcome: 'success'; data: Data; errors: []; failedPaths: [] }
 
 /** Some fields failed: `data` is populated, with each path in `failedPaths` set to `undefined`. */
@@ -48,7 +48,7 @@ export type MutationSources = AnySettled[] | 'none'
 /** Non-enumerable brand on every object returned by `settle()`, for consumers like mobx-async. */
 export const SETTLED_BRAND = Symbol.for('@avantstay/graphql-ts-client/settled')
 
-/** Marks `value` as a settled result; `settle()` is its only producer. */
+/** `settle()` is the only producer of this brand — nothing else may claim to be a settled result. */
 export function brandSettled<Value extends object>(value: Value): Value {
   Object.defineProperty(value, SETTLED_BRAND, { value: true, enumerable: false })
   return value

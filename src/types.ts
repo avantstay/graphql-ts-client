@@ -90,14 +90,15 @@ export type RawResponse<Data> = {
   failedPaths: string[]
 }
 
-/** Options `raw()` tolerates but ignores, so a `__settledSources` copied from a mutation call does not break a query's `raw()`. */
-export type CallOptions = {
-  /** The settled results this payload was built from, or `'none'`; required by `settle()` on a mutation, ignored here. */
+/** Lets `raw()` tolerate a `__settledSources` copied from a mutation call; `raw()` ignores it. */
+export type TolerateSettledSources = {
   __settledSources?: MutationSources
 }
 
 /** The `raw()` call signature: never throws on GraphQL errors, and reports them through the outcome fields. */
-export type RawEndpoint<I, O, E> = <S extends I>(jsonQuery?: S & CallOptions) => Promise<RawResponse<Projection<S, O, E>>>
+export type RawEndpoint<I, O, E> = <S extends I>(
+  jsonQuery?: S & TolerateSettledSources
+) => Promise<RawResponse<Projection<S, O, E>>>
 
 /** The `settle()` call signature for a query. */
 export type SettleEndpoint<I, O, E> = <S extends I>(jsonQuery?: S) => Promise<SettledResponse<Projection<S, O, E>>>
@@ -112,18 +113,17 @@ export type MutationSettleEndpoint<I, O, E> = <S extends I>(
 
 export type JsonOutput<O, ToBeIgnored> = DeepReplace<O, ToBeIgnored, [string | Date, string]>
 
-export type Endpoint<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>) & {
+/** Everything an endpoint offers apart from `settle()`, which differs between queries and mutations. */
+type EndpointBase<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>) & {
   memo: <S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>
   memoRaw: RawEndpoint<I, JsonOutput<O, E>, E>
   raw: RawEndpoint<I, JsonOutput<O, E>, E>
-  settle: SettleEndpoint<I, JsonOutput<O, E>, E>
 }
 
-/** An Endpoint whose `settle()` requires `__settledSources`, spelled out in full because `Omit` would drop the call signature. */
-export type MutationEndpoint<I, O, E> = (<S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>) & {
-  memo: <S extends I>(jsonQuery?: S) => Promise<Projection<S, JsonOutput<O, E>, E>>
-  memoRaw: RawEndpoint<I, JsonOutput<O, E>, E>
-  raw: RawEndpoint<I, JsonOutput<O, E>, E>
+export type Endpoint<I, O, E> = EndpointBase<I, O, E> & { settle: SettleEndpoint<I, JsonOutput<O, E>, E> }
+
+/** An Endpoint whose `settle()` requires `__settledSources`. */
+export type MutationEndpoint<I, O, E> = EndpointBase<I, O, E> & {
   settle: MutationSettleEndpoint<I, JsonOutput<O, E>, E>
 }
 

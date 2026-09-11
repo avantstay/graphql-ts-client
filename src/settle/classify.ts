@@ -34,28 +34,14 @@ function normalizeWarnings(rawWarnings: unknown): Warning[] {
     .map(warning => ({ message: warning.message, code: typeof warning.code === 'string' ? warning.code : undefined }))
 }
 
-/** Decides whether a response succeeded, is partial, or failed, resolving each error to the path that actually failed. */
-export function classify(input: ClassifyInput): Classification {
-  const errors = normalizeErrors(input.errors, input.rootName)
-  const warnings = normalizeWarnings(input.warnings)
-  const failure = (reason: FailureReason, failedPaths: string[] = [], failedSegments: PathSegment[][] = []): Classification => ({
-    outcome: 'failure',
-    reason,
-    errors,
-    warnings,
-    failedPaths,
-    failedSegments,
-  })
-
-  if (input.status !== undefined && input.status >= 400) return failure('http')
-  if (input.data === null || input.data === undefined) return failure('no-data')
-
+/** The distinct paths the server actually nulled, plus whether the root field itself was lost. */
+function resolveFailures(data: unknown, errors: SettledError[]): { failedSegments: PathSegment[][]; rootLost: boolean } {
   const failedSegments: PathSegment[][] = []
   const seen = new Set<string>()
   let rootLost = false
   for (const error of errors) {
     if (!error.path) continue
-    const resolved = resolveFailedPath(input.data, error.path)
+    const resolved = resolveFailedPath(data, error.path)
     if (resolved === 'root') {
       rootLost = true
       continue
@@ -65,6 +51,26 @@ export function classify(input: ClassifyInput): Classification {
     seen.add(key)
     failedSegments.push(resolved)
   }
+  return { failedSegments, rootLost }
+}
+
+/** Decides whether a response succeeded, is partial, or failed, resolving each error to the path that actually failed. */
+export function classify(input: ClassifyInput): Classification {
+  const errors = normalizeErrors(input.errors, input.rootName)
+  const warnings = normalizeWarnings(input.warnings)
+  const failure = (reason: FailureReason, failedPaths: string[], failedSegments: PathSegment[][]): Classification => ({
+    outcome: 'failure',
+    reason,
+    errors,
+    warnings,
+    failedPaths,
+    failedSegments,
+  })
+
+  if (input.status !== undefined && input.status >= 400) return failure('http', [], [])
+  if (input.data === null || input.data === undefined) return failure('no-data', [], [])
+
+  const { failedSegments, rootLost } = resolveFailures(input.data, errors)
   const failedPaths = failedSegments.map(pathToString)
 
   if (rootLost) return failure('no-data', failedPaths, failedSegments)
@@ -82,9 +88,12 @@ export function applyFailedPaths(data: unknown, failedSegments: PathSegment[][])
 export function toSettled<Data>(data: Data, classification: Classification, status?: number): SettledResponse<Data> {
   const { errors, warnings, failedPaths } = classification
   const shared = { errors, warnings, failedPaths, status }
-  if (classification.outcome === 'failure') {
-    return brandSettled({ ...shared, outcome: 'failure' as const, reason: classification.reason, data: null })
+  switch (classification.outcome) {
+    case 'failure':
+      return brandSettled({ ...shared, outcome: 'failure' as const, reason: classification.reason, data: null })
+    case 'partial':
+      return brandSettled({ ...shared, outcome: 'partial' as const, data })
+    case 'success':
+      return brandSettled({ ...shared, outcome: 'success' as const, data, errors: [] as [], failedPaths: [] as [] })
   }
-  if (classification.outcome === 'partial') return brandSettled({ ...shared, outcome: 'partial' as const, data })
-  return brandSettled({ ...shared, outcome: 'success' as const, data, errors: [] as [], failedPaths: [] as [] })
 }

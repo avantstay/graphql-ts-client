@@ -9,6 +9,7 @@ function isPathSegment(value: unknown): value is PathSegment {
   return typeof value === 'string' || typeof value === 'number'
 }
 
+/** The error path relative to the root field, or `undefined` when it is absent *or* malformed — both are treated as path-less. */
 function normalizePath(rawPath: unknown, rootName: string): PathSegment[] | undefined {
   if (!Array.isArray(rawPath)) return undefined
   const path: PathSegment[] = []

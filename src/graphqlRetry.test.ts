@@ -1,12 +1,11 @@
 import { graphqlRequest } from './graphqlRequest'
 
-function clientWithRetries(max: number) {
-  return { url: 'https://example.invalid/graphql', headers: {}, retryConfig: { max, before: () => undefined } }
-}
-
-function axiosReturning(responses: Array<{ status: number; data?: unknown }>) {
-  let call = 0
-  return { post: async () => responses[Math.min(call++, responses.length - 1)] } as any
+function clientWithRetries(max: number, extra: { waitBeforeRetry?: number; before?: (info: any) => void } = {}) {
+  return {
+    url: 'https://example.invalid/graphql',
+    headers: {},
+    retryConfig: { max, before: () => undefined, ...extra },
+  }
 }
 
 function countingAxios(responses: Array<{ status: number; data?: unknown }>) {
@@ -18,6 +17,10 @@ function countingAxios(responses: Array<{ status: number; data?: unknown }>) {
     },
   } as any
   return { axios, calls }
+}
+
+function axiosReturning(responses: Array<{ status: number; data?: unknown }>) {
+  return countingAxios(responses).axios
 }
 
 const noDataResponse = { status: 200, data: { data: null, errors: [{ message: 'nothing came back' }] } }
@@ -90,11 +93,7 @@ describe('retry policy', () => {
   it('calls the before hook once per retry with the response that triggered it', async () => {
     const beforeCalls: Array<{ queryName: string; response: any }> = []
     const { axios, calls } = countingAxios([{ status: 500 }, noDataResponse, { status: 200, data: { data: { user: {} } } }])
-    const client = {
-      url: 'https://example.invalid/graphql',
-      headers: {},
-      retryConfig: { max: 3, before: (info: any) => void beforeCalls.push(info) },
-    }
+    const client = clientWithRetries(3, { before: (info: any) => void beforeCalls.push(info) })
 
     const result = await graphqlRequest({ ...common, kind: 'query', axios, client })
 
@@ -111,11 +110,7 @@ describe('retry policy', () => {
   it('awaits waitBeforeRetry between attempts', async () => {
     const waitBeforeRetry = 60
     const { axios, calls } = countingAxios([{ status: 500 }, { status: 200, data: { data: { user: { id: 'user_1' } } } }])
-    const client = {
-      url: 'https://example.invalid/graphql',
-      headers: {},
-      retryConfig: { max: 1, waitBeforeRetry, before: () => undefined },
-    }
+    const client = clientWithRetries(1, { waitBeforeRetry })
 
     const result = await graphqlRequest({ ...common, kind: 'query', axios, client })
 
@@ -128,11 +123,7 @@ describe('retry policy', () => {
   it('does not retry when the call opts out with __retry: false', async () => {
     const beforeCalls: any[] = []
     const { axios, calls } = countingAxios([{ status: 500 }, { status: 200, data: { data: { user: { id: 'user_1' } } } }])
-    const client = {
-      url: 'https://example.invalid/graphql',
-      headers: {},
-      retryConfig: { max: 2, before: (info: any) => void beforeCalls.push(info) },
-    }
+    const client = clientWithRetries(2, { before: (info: any) => void beforeCalls.push(info) })
 
     const result = await graphqlRequest({ ...common, kind: 'query', shouldRetry: false, axios, client })
 

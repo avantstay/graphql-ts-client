@@ -1,6 +1,6 @@
 import axios from 'axios'
-import { getApiEndpointCreator } from './endpoint'
 import { isSettled } from './settle/types'
+import { createTestEndpointCreator } from './testSupport/endpointFixture'
 import { MissingSourcesError, MutationEndpoint } from './types'
 
 const typesTree: any = {}
@@ -22,15 +22,7 @@ typesTree.Mutation = {
 }
 
 const responseListener = jest.fn()
-const createEndpoint = getApiEndpointCreator({
-  getClient: () => ({ url: 'https://example.invalid/graphql', headers: {}, retryConfig: { max: 0, before: () => undefined } }),
-  requestListeners: [],
-  responseListeners: [responseListener],
-  typesTree,
-  maxAge: 30000,
-  verbose: false,
-  formatGraphQL: (query: string) => query,
-})
+const createEndpoint = createTestEndpointCreator({ responseListeners: [responseListener], typesTree, maxAge: 30000 })
 const user = createEndpoint<any, any, any>('query', 'user')
 const updateUser = createEndpoint<any, any, any>('mutation', 'updateUser')
 
@@ -39,11 +31,15 @@ const partialBody = {
   errors: [{ message: 'Service unavailable', path: ['user', 'stats'], extensions: { code: 'SERVICE_UNAVAILABLE' } }],
 }
 
+function mockPost(data: unknown, status = 200) {
+  return jest.spyOn(axios, 'post').mockResolvedValue({ status, headers: {}, data } as never)
+}
+
 afterEach(() => jest.restoreAllMocks())
 
 describe('raw()', () => {
   it('returns the untouched data plus outcome fields', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
+    mockPost(partialBody)
     const result = await user.raw({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     expect(result.data).toEqual({ id: 'user_1', stats: null })
     expect(result).toMatchObject({ status: 200, outcome: 'partial', failedPaths: ['stats'] })
@@ -54,7 +50,7 @@ describe('raw()', () => {
 
 describe('settle()', () => {
   it('returns a branded union with normalised data', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
+    mockPost(partialBody)
     const result = await user.settle({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     expect(isSettled(result)).toBe(true)
     expect(result).toMatchObject({ outcome: 'partial', failedPaths: ['stats'], status: 200 })
@@ -62,7 +58,7 @@ describe('settle()', () => {
   })
 
   it('never throws on failure', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 500, headers: {}, data: {} })
+    mockPost({}, 500)
     await expect(user.settle({ __args: { id: 'user_1' }, id: true })).resolves.toMatchObject({
       outcome: 'failure',
       reason: 'http',
@@ -80,7 +76,7 @@ describe('settle()', () => {
   })
 
   it('does not mutate the data already handed to response listeners', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
+    mockPost(partialBody)
     responseListener.mockClear()
     const result = await user.settle({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -91,10 +87,9 @@ describe('settle()', () => {
   })
 
   it('blocks a mutation whose source is partial without sending, carrying its errors and warnings', async () => {
-    const post = jest.spyOn(axios, 'post').mockResolvedValue({
-      status: 200,
-      headers: {},
-      data: { ...partialBody, extensions: { warnings: [{ message: 'Serving a stale cache', code: 'STALE_CACHE' }] } },
+    const post = mockPost({
+      ...partialBody,
+      extensions: { warnings: [{ message: 'Serving a stale cache', code: 'STALE_CACHE' }] },
     })
     const source = await user.settle({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     expect(source.warnings).toEqual([{ message: 'Serving a stale cache', code: 'STALE_CACHE' }])
@@ -107,9 +102,7 @@ describe('settle()', () => {
   })
 
   it('sends a mutation when sources succeeded or are explicitly none', async () => {
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
+    const post = mockPost({ data: { updateUser: { id: 'user_1' } } })
     await expect(updateUser.settle({ __settledSources: 'none', id: true })).resolves.toMatchObject({
       outcome: 'success',
     })
@@ -129,9 +122,7 @@ describe('settle()', () => {
   })
 
   it('strips __settledSources from the document', async () => {
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
+    const post = mockPost({ data: { updateUser: { id: 'user_1' } } })
     await updateUser.settle({ __settledSources: 'none', id: true })
     const [, body] = post.mock.calls[0] as [string, { query: string }]
     expect(body.query).not.toMatch(/__/)
@@ -140,9 +131,7 @@ describe('settle()', () => {
 
 describe('call options', () => {
   it('keeps every __ option out of the document while still honouring it', async () => {
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { aliasedUser: { id: 'user_1' } } } })
+    const post = mockPost({ data: { aliasedUser: { id: 'user_1' } } })
     const result = await user.raw({
       __args: { id: 'user_1' },
       __alias: 'aliasedUser',
@@ -164,9 +153,7 @@ describe('call options', () => {
   })
 
   it('drops an unknown __ option but keeps __typename, a real GraphQL meta-field', async () => {
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { user: { __typename: 'User', id: 'user_1' } } } })
+    const post = mockPost({ data: { user: { __typename: 'User', id: 'user_1' } } })
     await user.raw({ __args: { id: 'user_1' }, __someFutureOption: ['stats'], __typename: true, id: true } as any)
     const [, body] = post.mock.calls[0] as [string, { query: string }]
     expect(body.query).toBe('query user($id: ID!) { user(id:$id) { __typename id } }')
@@ -175,7 +162,7 @@ describe('call options', () => {
 
 describe('response listeners and memo', () => {
   it('gives listeners outcome and failedPaths', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: partialBody })
+    mockPost(partialBody)
     responseListener.mockClear()
     await user.raw({ __args: { id: 'user_1' }, id: true, stats: { score: true } })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -188,10 +175,11 @@ describe('response listeners and memo', () => {
   })
 
   it('memoRaw caches success only', async () => {
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValueOnce({ status: 200, headers: {}, data: partialBody })
-      .mockResolvedValue({ status: 200, headers: {}, data: { data: { user: { id: 'user_1', stats: { score: 5 } } } } })
+    const post = mockPost({ data: { user: { id: 'user_1', stats: { score: 5 } } } }).mockResolvedValueOnce({
+      status: 200,
+      headers: {},
+      data: partialBody,
+    } as never)
     const selection = { __args: { id: 'memo' }, id: true, stats: { score: true } }
     expect((await user.memoRaw(selection)).outcome).toBe('partial')
     expect((await user.memoRaw(selection)).outcome).toBe('success')
@@ -202,7 +190,7 @@ describe('response listeners and memo', () => {
 
 describe('MutationEndpoint type', () => {
   it('stays callable as a function (compile-time check)', async () => {
-    jest.spyOn(axios, 'post').mockResolvedValue({ status: 200, headers: {}, data: { data: { updateUser: { id: 'user_1' } } } })
+    mockPost({ data: { updateUser: { id: 'user_1' } } })
     const typed: MutationEndpoint<any, any, any> = updateUser as any
     await typed({ id: true })
     expect(typeof typed).toBe('function')

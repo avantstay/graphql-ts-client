@@ -2,7 +2,7 @@ import { MissingSourcesError } from '../types'
 import { toSettled } from './classify'
 import { AnySettled, isSettled, MutationSources, SettledResponse } from './types'
 
-/** Returns `__settledSources` when it is `'none'` or a non-empty list of settled results, and throws MissingSourcesError otherwise. */
+/** A mutation may only be built from checked reads, so an unrecognised `__settledSources` is a programming error, not a failed outcome. */
 export function validateSources(sources: unknown): MutationSources {
   if (sources === 'none') return sources
   if (!Array.isArray(sources) || sources.length === 0 || !sources.every(isSettled)) throw new MissingSourcesError()

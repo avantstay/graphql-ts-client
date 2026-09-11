@@ -21,7 +21,7 @@ export function isContainer(value: unknown): value is Record<string, unknown> | 
 }
 
 export function childAt(container: Record<string, unknown> | unknown[], segment: PathSegment): unknown {
-  return (container as Record<string, unknown>)[segment as string]
+  return (container as Record<PathSegment, unknown>)[segment]
 }
 
 /** The value at `path`, or `undefined` if the walk leaves a container before the end. */
@@ -39,16 +39,15 @@ export function setUndefinedAtPath(value: unknown, path: PathSegment[]): void {
   if (path.length === 0) return
   const parent = getAtPath(value, path.slice(0, -1))
   if (!isContainer(parent)) return
-  const lastSegment = path[path.length - 1]
-  ;(parent as Record<string, unknown>)[lastSegment as string] = undefined
+  ;(parent as Record<PathSegment, unknown>)[path[path.length - 1]] = undefined
 }
 
 /** True when `path` or one of its ancestors failed. */
 export function failedAt(result: AnySettled, path: string): boolean {
-  return result.failedPaths.some(failed => isPrefixPath(failed, path))
+  return result.failedPaths.some(failedPath => isPrefixPath(failedPath, path))
 }
 
 /** The errors whose path is `path` or lies under it. */
 export function errorsAt(result: AnySettled, path: string): SettledError[] {
-  return result.errors.filter(error => error.path !== undefined && isPrefixPath(path, pathToString(error.path)))
+  return result.errors.filter(({ path: errorPath }) => errorPath !== undefined && isPrefixPath(path, pathToString(errorPath)))
 }

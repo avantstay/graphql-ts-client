@@ -1,5 +1,6 @@
 import _axios, { AxiosStatic } from 'axios'
 import { classify } from './settle/classify'
+import { attachClassification } from './settle/settleRaw'
 import { ClientConfig, GraphQLClientError, ResponseData } from './types'
 
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
@@ -29,11 +30,11 @@ export async function graphqlRequest({
   variables: { [_key: string]: any }
   errorsParser?: (errors: any[]) => any
 }) {
-  let lastResponse: ResponseData | undefined
+  let lastResponse!: ResponseData
   // Mutations are never retried: a mutation that returned errors has an unknown server-side outcome.
   const maxRetrials = shouldRetry && kind === 'query' ? client.retryConfig.max : 0
 
-  for (let trial = 0; true; trial++) {
+  for (let trial = 0; ; trial++) {
     const infoParams = { _q: queryName, ...(trial > 0 ? { _retrial: trial + 1 } : {}) }
     const {
       data: responseData = {} as any,
@@ -59,22 +60,23 @@ export async function graphqlRequest({
       data: data?.[queryName],
       errors,
       warnings,
-      status: typeof status === 'number' ? status : undefined,
+      status,
       rootName: queryName,
     })
 
-    lastResponse = {
-      errors: errorsParser ? errorsParser(errors) : errors,
-      data,
-      warnings,
-      headers,
-      status,
-      outcome: classification.outcome,
-      ...(classification.outcome === 'failure' ? { reason: classification.reason } : {}),
-      failedPaths: classification.failedPaths,
-    } as ResponseData
-    // Non-enumerable so listener payloads and GraphQLClientError.response never carry it, while settle() still reads it by name.
-    Object.defineProperty(lastResponse, 'classification', { value: classification, enumerable: false })
+    lastResponse = attachClassification(
+      {
+        errors: errorsParser ? errorsParser(errors) : errors,
+        data,
+        warnings,
+        headers,
+        status,
+        outcome: classification.outcome,
+        ...(classification.outcome === 'failure' ? { reason: classification.reason } : {}),
+        failedPaths: classification.failedPaths,
+      } as ResponseData,
+      classification
+    )
 
     const retryable =
       classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
@@ -85,9 +87,8 @@ export async function graphqlRequest({
     if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
   }
 
-  const response = lastResponse as ResponseData
-  if (failureMode === 'loud' && response.errors?.length) {
-    throw new GraphQLClientError(response)
+  if (failureMode === 'loud' && lastResponse.errors?.length) {
+    throw new GraphQLClientError(lastResponse)
   }
-  return response
+  return lastResponse
 }

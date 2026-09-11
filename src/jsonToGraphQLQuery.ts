@@ -23,7 +23,6 @@ export function jsonToGraphQLQuery({
   typesTree: any
 }) {
   const variablesData = {} as ExtractedVariables
-  const operationAlias = alias
   const newJsonQuery = cloneDeep(jsonQuery)
 
   extractVariables({
@@ -43,14 +42,14 @@ export function jsonToGraphQLQuery({
 
   const variablesQuery = Object.keys(variableItems).length
     ? `(${entries(variableItems)
-        .map(([queryName, { type }]: any) => `$${queryName}: ${type}`)
+        .map(([variableName, { type }]: any) => `$${variableName}: ${type}`)
         .join(', ')})`
     : ''
 
-  const query = `${kind} ${operationAlias || queryName}${variablesQuery} { ${
-    operationAlias ? `${operationAlias}:` : ''
-  }${queryName}${toGraphql(newJsonQuery)} }`
-  const variables = fromEntries(entries(variableItems).map(([k, v]: any) => [k, v.value]))
+  const query = `${kind} ${alias || queryName}${variablesQuery} { ${alias ? `${alias}:` : ''}${queryName}${toGraphql(
+    newJsonQuery
+  )} }`
+  const variables = fromEntries(entries(variableItems).map(([variableName, variable]: any) => [variableName, variable.value]))
 
   return {
     query,
@@ -70,11 +69,11 @@ function extractVariables({
   if (!parentType) return
 
   if (jsonQuery.__args) {
-    Object.keys(jsonQuery.__args).forEach(k => {
-      if (typeof jsonQuery.__args[k] === 'string' && jsonQuery.__args[k].startsWith(VAR_PREFIX)) return
-      if (jsonQuery.__args[k] === undefined) return
+    Object.keys(jsonQuery.__args).forEach(argName => {
+      if (typeof jsonQuery.__args[argName] === 'string' && jsonQuery.__args[argName].startsWith(VAR_PREFIX)) return
+      if (jsonQuery.__args[argName] === undefined) return
 
-      const variableName = k
+      const variableName = argName
 
       if (!variables[variableName]) {
         variables[variableName] = []
@@ -82,39 +81,45 @@ function extractVariables({
 
       variables[variableName].push({
         name: variableName,
-        type: parentType.__args[k],
-        value: jsonQuery.__args[k],
+        type: parentType.__args[argName],
+        value: jsonQuery.__args[argName],
         update: (index?: number) => {
           const name = `${variableName}${index !== undefined ? `_${index}` : ''}`
-          jsonQuery.__args[k] = `${VAR_PREFIX}$${name}`
+          jsonQuery.__args[argName] = `${VAR_PREFIX}$${name}`
 
           return name
         },
       })
 
-      jsonQuery.__args[k] = VAR_PREFIX
+      jsonQuery.__args[argName] = VAR_PREFIX
     })
   }
 
   Object.keys(jsonQuery)
-    .filter(k => k !== '__args' && typeof jsonQuery[k] === 'object')
-    .forEach(k =>
+    .filter(fieldName => fieldName !== '__args' && typeof jsonQuery[fieldName] === 'object')
+    .forEach(fieldName =>
       extractVariables({
-        jsonQuery: jsonQuery[k],
+        jsonQuery: jsonQuery[fieldName],
         variables,
-        parentType: parentType.hasOwnProperty(k) ? parentType[k] : parentType.__fields ? parentType.__fields[k] : undefined,
+        parentType: parentType.hasOwnProperty(fieldName)
+          ? parentType[fieldName]
+          : parentType.__fields
+          ? parentType.__fields[fieldName]
+          : undefined,
       })
     )
 }
 
 function toGraphql(jsonQuery: any) {
   const fields = entries(jsonQuery)
-    .filter(([k, v]) => k !== '__args' && v !== false && v !== undefined)
-    .map(([k, v]) => (typeof v === 'object' ? `${k}${toGraphql(v)}` : k))
+    .filter(([fieldName, fieldValue]) => fieldName !== '__args' && fieldValue !== false && fieldValue !== undefined)
+    .map(([fieldName, fieldValue]) => (typeof fieldValue === 'object' ? `${fieldName}${toGraphql(fieldValue)}` : fieldName))
     .join(' ') as any
 
-  const validArgs = jsonQuery.__args ? entries(jsonQuery.__args).filter(([_, v]) => v !== undefined) : []
-  const argsQuery = validArgs.length ? `(${validArgs.map(([k, v]: any) => `${k}:${v.substr(VAR_PREFIX_LENGTH)}`).join(',')})` : ''
+  const validArgs = jsonQuery.__args ? entries(jsonQuery.__args).filter(([, argValue]) => argValue !== undefined) : []
+  const argsQuery = validArgs.length
+    ? `(${validArgs.map(([argName, argValue]) => `${argName}:${(argValue as string).slice(VAR_PREFIX_LENGTH)}`).join(',')})`
+    : ''
 
   return `${argsQuery} ${fields ? `{ ${fields} }` : ''}`
 }

@@ -3,7 +3,8 @@ import memoize from 'moize'
 import { graphqlRequest } from './graphqlRequest'
 import { jsonToGraphQLQuery } from './jsonToGraphQLQuery'
 import { logRequest } from './logging'
-import { ClassifiedRawResponse, settleRawResult, settleThrown } from './settle/settleRaw'
+import { Classification } from './settle/classify'
+import { attachClassification, ClassifiedRawResponse, settleRawResult, settleThrown } from './settle/settleRaw'
 import { blockedBySource, findBlockingSource, validateSources } from './settle/sources'
 import { SettledResponse } from './settle/types'
 import {
@@ -12,17 +13,46 @@ import {
   GraphQLClientError,
   IRequestListener,
   IResponseListener,
+  LogInfo,
   Projection,
+  ResponseData,
   ResponseListenerInfo,
+  SettleEndpoint,
 } from './types'
 
 const KEYS_KEPT_IN_DOCUMENT = ['__args', '__typename']
 
 /** Copies a selection without the endpoint's `__`-prefixed call options; `__args` and `__typename` belong in the document. */
-function stripCallOptions(jsonQuery: any): any {
+function stripCallOptions(jsonQuery: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!jsonQuery) return jsonQuery
   const documentKeys = Object.keys(jsonQuery).filter(key => !key.startsWith('__') || KEYS_KEPT_IN_DOCUMENT.includes(key))
   return fromPairs(documentKeys.map(key => [key, jsonQuery[key]]))
+}
+
+/** The `__`-prefixed options a call may carry; they configure the request and never reach the document. */
+type CallOptionInput = {
+  __alias?: string
+  __retry?: boolean
+  __headers?: Record<string, string>
+  __url?: string
+  __settledSources?: unknown
+}
+
+function readCallOptions(jsonQuery: unknown): {
+  alias?: string
+  shouldRetry: boolean
+  requestHeaders: Record<string, string>
+  url?: string
+  settledSources: unknown
+} {
+  const options = (jsonQuery ?? {}) as CallOptionInput
+  return {
+    alias: options.__alias,
+    shouldRetry: options.__retry ?? true,
+    requestHeaders: options.__headers ?? {},
+    url: options.__url,
+    settledSources: options.__settledSources,
+  }
 }
 
 const executeListeners = (listeners: IResponseListener[], data: ResponseListenerInfo) =>
@@ -46,12 +76,21 @@ export const getApiEndpointCreator =
       jsonQuery?: S
     ) => Promise<ClassifiedRawResponse<Projection<S, O>>>
 
+    const logIfVerbose = (logOptions: object, outcome: { response?: unknown; error?: Error }, start: number) => {
+      if (!apiConfig.verbose || !globalThis.document) return
+      logRequest({ ...logOptions, ...outcome, duration: +new Date() - start } as LogInfo)
+    }
+
+    const projectRootField = <S extends I>(result: ResponseData, alias: string) => {
+      const { classification, ...rawFields } = result
+      const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<Projection<S, O>>
+      return attachClassification(rawResult, classification as Classification)
+    }
+
     const rawEndpoint: RawCall = async <S extends I>(failureMode: 'loud' | 'silent', jsonQuery?: S) => {
-      const aliasOption = (jsonQuery as any)?.__alias
+      const { alias: aliasOption, shouldRetry, requestHeaders, url: urlOption } = readCallOptions(jsonQuery)
       const alias = aliasOption ?? queryName
-      const shouldRetry = (jsonQuery as any)?.__retry ?? true
-      const requestHeaders = (jsonQuery as any)?.__headers ?? {}
-      const document = stripCallOptions(jsonQuery)
+      const document = stripCallOptions(jsonQuery as Record<string, unknown> | undefined)
       const { query, variables } = jsonToGraphQLQuery({
         kind,
         queryName,
@@ -80,7 +119,7 @@ export const getApiEndpointCreator =
       await Promise.all(apiConfig.requestListeners.map(listener => listener(listenerData)))
 
       const clientConfig = apiConfig.getClient()
-      const url = (jsonQuery as any)?.__url ?? clientConfig.url
+      const url = urlOption ?? clientConfig.url
 
       try {
         const result = await graphqlRequest({
@@ -95,33 +134,11 @@ export const getApiEndpointCreator =
           errorsParser: apiConfig.errorsParser,
         })
 
-        if (apiConfig.verbose && globalThis.document) {
-          logRequest({
-            ...logOptions,
-            response: result,
-            duration: +new Date() - start,
-          })
-        }
-
-        executeListeners(apiConfig.responseListeners, {
-          ...listenerData,
-          response: result,
-        })
-
-        // The rest spread below drops the non-enumerable `classification`, so it is pulled out and re-attached the same way.
-        const { classification, ...rawFields } = result
-        const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<Projection<S, O>>
-        Object.defineProperty(rawResult, 'classification', { value: classification, enumerable: false })
-        return rawResult
+        logIfVerbose(logOptions, { response: result }, start)
+        executeListeners(apiConfig.responseListeners, { ...listenerData, response: result })
+        return projectRootField<S>(result, alias)
       } catch (error) {
-        if (apiConfig.verbose && globalThis.document) {
-          logRequest({
-            ...logOptions,
-            error: error as Error,
-            duration: +new Date() - start,
-          })
-        }
-
+        logIfVerbose(logOptions, { error: error as Error }, start)
         executeListeners(apiConfig.responseListeners, {
           ...listenerData,
           response: (error as GraphQLClientError).response,
@@ -131,9 +148,16 @@ export const getApiEndpointCreator =
       }
     }
 
-    const endpoint: any = async <S extends I>(jsonQuery?: S): Promise<Projection<S, O>> => {
+    const callEndpoint = async <S extends I>(jsonQuery?: S): Promise<Projection<S, O>> => {
       const { data } = await rawEndpoint('loud', jsonQuery)
       return data
+    }
+
+    const endpoint = callEndpoint as typeof callEndpoint & {
+      raw: (jsonQuery?: I) => Promise<ClassifiedRawResponse<Projection<I, O>>>
+      memo: typeof callEndpoint
+      memoRaw: (jsonQuery?: I) => Promise<ClassifiedRawResponse<Projection<I, O>>>
+      settle: SettleEndpoint<I, O, never>
     }
 
     const memoizeeOptions = {
@@ -146,7 +170,7 @@ export const getApiEndpointCreator =
 
     endpoint.settle = async <S extends I>(jsonQuery?: S): Promise<SettledResponse<Projection<S, O>>> => {
       if (kind === 'mutation') {
-        const blocking = findBlockingSource(validateSources((jsonQuery as any)?.__settledSources))
+        const blocking = findBlockingSource(validateSources(readCallOptions(jsonQuery).settledSources))
         if (blocking) return blockedBySource(blocking)
       }
 
@@ -160,12 +184,12 @@ export const getApiEndpointCreator =
     }
 
     const memoizedRaw = memoize(endpoint.raw, memoizeeOptions)
-    const memoRawWrapper = async (...args: any[]) => {
+    const memoRawWrapper = async (...args: Parameters<typeof memoizedRaw>) => {
       const result = await memoizedRaw(...args)
       if (result.outcome !== 'success') memoizedRaw.remove(args)
       return result
     }
     endpoint.memoRaw = Object.assign(memoRawWrapper, memoizedRaw)
 
-    return endpoint
+    return endpoint as unknown as Endpoint<I, O, E>
   }

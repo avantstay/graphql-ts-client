@@ -28,9 +28,14 @@ import { TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
-function graphqlTsClientPath() {
+/** Read per call, not once at import: tests and the dist smoke script set GQL_CLIENT_DIST_PATH after this module loads. */
+function clientImportPath() {
   return process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
 }
+
+const SETTLED_SOURCES_DOC = `/** Required by settle(): the settled results this payload was built from, or 'none'. See @avantstay/graphql-ts-client README, "Writing with settle()". */`
+
+const INPUT_TYPE_INDENT = '\n    '
 
 function gqlScalarToTypescript(gqlType: string) {
   if (/(int|long|double|decimal|float)/i.test(gqlType)) return 'number'
@@ -151,13 +156,11 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
     '__retry?: boolean;',
     '__alias?: string;',
     '__url?: string;',
-    kind === 'mutation'
-      ? '/** Required by settle(): the settled results this payload was built from, or \'none\'. See @avantstay/graphql-ts-client README, "Writing with settle()". */\n    __settledSources?: MutationSources;'
-      : null,
+    kind === 'mutation' ? `${SETTLED_SOURCES_DOC}${INPUT_TYPE_INDENT}__settledSources?: MutationSources;` : null,
     argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : null,
-  ].filter(Boolean)
+  ].filter((line): line is string => line !== null)
   const inputType = `{
-    ${inputTypeLines.join('\n    ')}
+    ${inputTypeLines.join(INPUT_TYPE_INDENT)}
   }${selectionType ? ` & ${selectionType}` : ''}`
 
   const outputType = gqlTypeToTypescript(endpoint.type, { required: true })
@@ -359,7 +362,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   // language=JavaScript
   const jsCode = `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols
-    import { getApiEndpointCreator } from '${graphqlTsClientPath()}/endpoint'
+    import { getApiEndpointCreator } from '${clientImportPath()}/endpoint'
     
     ${
       options.formatGraphQL || options.verbose
@@ -456,7 +459,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   const typingsCode = `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
     import { DeepRequired } from 'ts-essentials'
-    import { Maybe, IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources } from '${graphqlTsClientPath()}'
+    import { Maybe, IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources } from '${clientImportPath()}'
 
     // Scalars
     export type IDate = string | Date

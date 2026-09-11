@@ -34,7 +34,7 @@ async function runCheck(description, check) {
   } catch (error) {
     failures += 1
     console.error(`dist smoke FAILED: ${description}`)
-    console.error(`  ${error && error.message ? error.message : error}`)
+    console.error(`  ${error?.message ?? error}`)
   }
 }
 
@@ -63,9 +63,16 @@ function buildEndpointFromCjsBundle(kind, queryName) {
   })(kind, queryName)
 }
 
-/** Replaces axios.post for the rest of the run, so this script never makes a real request. */
-function stubAxiosPost(responseBody) {
-  axios.post = async () => ({ status: 200, headers: {}, data: responseBody })
+const PARTIAL_BODY = { data: { a: { b: null } }, errors: [{ message: 'x', path: ['a', 'b'] }] }
+const NULL_ROOT_BODY = { data: { a: null }, errors: [{ message: 'x', path: ['a'] }] }
+const SUCCESS_BODY = { data: { a: { b: 1 } } }
+
+/** Wraps a check so it runs against `responseBody`, stubbing axios.post and never making a real request. */
+function withStubbedPost(responseBody, check) {
+  return async () => {
+    axios.post = async () => ({ status: 200, headers: {}, data: responseBody })
+    await check()
+  }
 }
 
 async function main() {
@@ -99,52 +106,61 @@ async function main() {
     assert.equal(typeof getApiEndpointCreatorFromEsm, 'function')
   })
 
-  stubAxiosPost({ data: { a: { b: null } }, errors: [{ message: 'x', path: ['a', 'b'] }] })
+  await runCheck(
+    'raw() on a partial response reports outcome partial',
+    withStubbedPost(PARTIAL_BODY, async () => {
+      const rawResult = await buildEndpointFromCjsBundle('query', 'a').raw({ b: true })
+      assert.equal(rawResult.outcome, 'partial', `expected partial, got ${rawResult.outcome}/${rawResult.reason}`)
+      assert.deepEqual(rawResult.failedPaths, ['b'])
+      assert.equal(rawResult.data.b, null, 'raw() must leave the server payload untouched')
+      assert.equal(rawResult.status, 200)
+    })
+  )
 
-  await runCheck('raw() on a partial response reports outcome partial', async () => {
-    const rawResult = await buildEndpointFromCjsBundle('query', 'a').raw({ b: true })
-    assert.equal(rawResult.outcome, 'partial', `expected partial, got ${rawResult.outcome}/${rawResult.reason}`)
-    assert.deepEqual(rawResult.failedPaths, ['b'])
-    assert.equal(rawResult.data.b, null, 'raw() must leave the server payload untouched')
-    assert.equal(rawResult.status, 200)
-  })
+  await runCheck(
+    'settle() on a partial response is partial and carries the settled brand',
+    withStubbedPost(PARTIAL_BODY, async () => {
+      const settledResult = await buildEndpointFromCjsBundle('query', 'a').settle({ b: true })
+      assert.equal(settledResult.outcome, 'partial', `expected partial, got ${settledResult.outcome}/${settledResult.reason}`)
+      assert.ok(isSettledFromEsm(settledResult), 'isSettled() from the index bundle must recognise the endpoint bundle result')
+      assert.deepEqual(settledResult.failedPaths, ['b'])
+      assert.equal(settledResult.data.b, undefined, 'settle() blanks the failed path')
+      assert.equal(settledResult.status, 200, 'settle() exposes the HTTP status as `status`')
+      assert.equal(settledResult.errors[0].extensions, undefined, 'this server sent no extensions')
+    })
+  )
 
-  await runCheck('settle() on a partial response is partial and carries the settled brand', async () => {
-    const settledResult = await buildEndpointFromCjsBundle('query', 'a').settle({ b: true })
-    assert.equal(settledResult.outcome, 'partial', `expected partial, got ${settledResult.outcome}/${settledResult.reason}`)
-    assert.ok(isSettledFromEsm(settledResult), 'isSettled() from the index bundle must recognise the endpoint bundle result')
-    assert.deepEqual(settledResult.failedPaths, ['b'])
-    assert.equal(settledResult.data.b, undefined, 'settle() blanks the failed path')
-    assert.equal(settledResult.status, 200, 'settle() exposes the HTTP status as `status`')
-    assert.equal(settledResult.errors[0].extensions, undefined, 'this server sent no extensions')
-  })
+  await runCheck(
+    'a null root field is classified as a no-data failure',
+    withStubbedPost(NULL_ROOT_BODY, async () => {
+      const rawResult = await buildEndpointFromCjsBundle('query', 'a').raw({ a: true })
+      assert.equal(rawResult.outcome, 'failure')
+      assert.equal(rawResult.reason, 'no-data')
+    })
+  )
 
-  stubAxiosPost({ data: { a: null }, errors: [{ message: 'x', path: ['a'] }] })
+  await runCheck(
+    'settle() on a mutation without __settledSources throws a recognisable MissingSourcesError',
+    withStubbedPost(NULL_ROOT_BODY, async () => {
+      await assert.rejects(
+        () => buildEndpointFromCjsBundle('mutation', 'a').settle({ a: true }),
+        error => error instanceof MissingSourcesErrorFromEsm
+      )
+      await assert.rejects(
+        () => buildEndpointFromCjsBundle('mutation', 'a').settle({ __settledSources: [], a: true }),
+        error => error instanceof MissingSourcesErrorFromEsm
+      )
+    })
+  )
 
-  await runCheck('a null root field is classified as a no-data failure', async () => {
-    const rawResult = await buildEndpointFromCjsBundle('query', 'a').raw({ a: true })
-    assert.equal(rawResult.outcome, 'failure')
-    assert.equal(rawResult.reason, 'no-data')
-  })
-
-  await runCheck('settle() on a mutation without __settledSources throws a recognisable MissingSourcesError', async () => {
-    await assert.rejects(
-      () => buildEndpointFromCjsBundle('mutation', 'a').settle({ a: true }),
-      error => error instanceof MissingSourcesErrorFromEsm
-    )
-    await assert.rejects(
-      () => buildEndpointFromCjsBundle('mutation', 'a').settle({ __settledSources: [], a: true }),
-      error => error instanceof MissingSourcesErrorFromEsm
-    )
-  })
-
-  stubAxiosPost({ data: { a: { b: 1 } } })
-
-  await runCheck("settle() on a mutation with __settledSources: 'none' sends and succeeds", async () => {
-    const settledResult = await buildEndpointFromCjsBundle('mutation', 'a').settle({ __settledSources: 'none', b: true })
-    assert.equal(settledResult.outcome, 'success', `expected success, got ${settledResult.outcome}/${settledResult.reason}`)
-    assert.deepEqual(settledResult.data, { b: 1 })
-  })
+  await runCheck(
+    "settle() on a mutation with __settledSources: 'none' sends and succeeds",
+    withStubbedPost(SUCCESS_BODY, async () => {
+      const settledResult = await buildEndpointFromCjsBundle('mutation', 'a').settle({ __settledSources: 'none', b: true })
+      assert.equal(settledResult.outcome, 'success', `expected success, got ${settledResult.outcome}/${settledResult.reason}`)
+      assert.deepEqual(settledResult.data, { b: 1 })
+    })
+  )
 
   if (failures > 0) {
     console.error(`dist smoke: ${failures} check(s) failed`)
