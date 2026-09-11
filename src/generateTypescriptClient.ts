@@ -22,13 +22,20 @@ import set from 'lodash/set.js'
 import md5 from 'md5'
 import os from 'os'
 import path from 'path'
-import * as prettier from 'prettier'
+import prettier from 'prettier'
 import pkg from '../package.json'
 import { TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
-const graphqlTsClientPath = process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
+/** Read per call, not once at import: tests and the dist smoke script set GQL_CLIENT_DIST_PATH after this module loads. */
+function clientImportPath() {
+  return process.env.GQL_CLIENT_DIST_PATH || '@avantstay/graphql-ts-client'
+}
+
+const SETTLED_SOURCES_DOC = `/** Required by settle(): the settled results this payload was built from, or 'none'. See @avantstay/graphql-ts-client README, "Writing with settle()". */`
+
+const INPUT_TYPE_INDENT = '\n    '
 
 function gqlScalarToTypescript(gqlType: string) {
   if (/(int|long|double|decimal|float)/i.test(gqlType)) return 'number'
@@ -39,7 +46,7 @@ function gqlScalarToTypescript(gqlType: string) {
 }
 
 function gqlTypeToTypescript(
-  gqlType: IntrospectionOutputTypeRef,
+  gqlType: IntrospectionOutputTypeRef | IntrospectionInputTypeRef,
   { required = false, isInput = false, selection = false } = {}
 ): string {
   if (!gqlType) return ''
@@ -51,41 +58,28 @@ function gqlTypeToTypescript(
     return maybeWrapped(gqlType)
   }
 
-  if (gqlType.kind.endsWith('OBJECT')) {
-    return maybeWrapped((gqlType as any).name + (selection ? 'Selection' : ''))
-  }
+  switch (gqlType.kind) {
+    case 'OBJECT':
+    case 'INPUT_OBJECT':
+      return maybeWrapped(gqlType.name + (selection ? 'Selection' : ''))
 
-  if (gqlType.kind === 'NON_NULL') {
-    return `${gqlTypeToTypescript(gqlType.ofType, {
-      isInput,
-      required: true,
-      selection,
-    })}`
-  }
+    case 'NON_NULL':
+      return gqlTypeToTypescript(gqlType.ofType, { isInput, required: true, selection })
 
-  if (gqlType.kind === 'LIST') {
-    return maybeWrapped(
-      `${gqlTypeToTypescript(gqlType.ofType, {
-        isInput,
-        required: true,
-        selection,
-      })}${selection ? '' : '[]'}`
-    )
-  }
+    case 'LIST':
+      return maybeWrapped(
+        `${gqlTypeToTypescript(gqlType.ofType, { isInput, required: true, selection })}${selection ? '' : '[]'}`
+      )
 
-  if (selection) {
-    return ''
-  }
+    case 'ENUM':
+      return selection || !gqlType.name ? '' : maybeWrapped(gqlType.name)
 
-  if (gqlType.kind === 'ENUM' && gqlType.name) {
-    return maybeWrapped(gqlType.name)
-  }
+    case 'SCALAR':
+      return selection ? '' : maybeWrapped(gqlScalarToTypescript(gqlType.name))
 
-  if (gqlType.kind === 'SCALAR') {
-    return maybeWrapped(gqlScalarToTypescript(gqlType.name))
+    default:
+      return ''
   }
-
-  return ''
 }
 
 function gqlFieldToTypescript(
@@ -144,18 +138,24 @@ function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionFi
   })
 
   const argsType = endpoint.args && endpoint.args.length ? getArgsType(endpoint) : null
+  const inputTypeLines = [
+    '__headers?: {[key: string]: string};',
+    '__retry?: boolean;',
+    '__alias?: string;',
+    '__url?: string;',
+    kind === 'mutation' ? `${SETTLED_SOURCES_DOC}${INPUT_TYPE_INDENT}__settledSources?: MutationSources;` : null,
+    argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : null,
+  ].filter((line): line is string => line !== null)
   const inputType = `{
-    __headers?: {[key: string]: string};
-    __retry?: boolean;
-    __alias?: string;
-    __url?: string;
-    ${argsType ? `__args${argsType.optional ? '?' : ''}: ${argsType.alias}` : ''}
+    ${inputTypeLines.join(INPUT_TYPE_INDENT)}
   }${selectionType ? ` & ${selectionType}` : ''}`
 
   const outputType = gqlTypeToTypescript(endpoint.type, { required: true })
 
+  const endpointTypeName = kind === 'mutation' ? 'MutationEndpoint' : 'Endpoint'
+
   return codeOutputType === 'ts'
-    ? `${endpoint.name}: Endpoint<${inputType}, ${outputType}, AllEnums>`
+    ? `${endpoint.name}: ${endpointTypeName}<${inputType}, ${outputType}, AllEnums>`
     : `${endpoint.name}: apiEndpoint('${kind}', '${endpoint.name}')`
 }
 
@@ -233,69 +233,89 @@ function getGraphQLOutputType(type: IntrospectionOutputTypeRef): string {
   }
 }
 
-function getTypesTreeCode(types: IntrospectionObjectType[]) {
-  const typesTree = {}
+/** One field of the resolution tree: the GraphQL type of each argument, and the object type the field resolves to. */
+type TypesTreeField = { __args?: Record<string, string>; __shape?: string }
+
+/** The resolution tree the generated client walks to type a query's variables: `Type -> field -> { __args, __shape }`. */
+type TypesTree = Record<string, Record<string, TypesTreeField>>
+
+/** Collects every field's argument types and the object type it resolves to, keyed by `Type.field`. */
+function buildTypesTree(types: IntrospectionObjectType[]): TypesTree {
+  const typesTree: TypesTree = {}
 
   types.forEach(type =>
     type.fields
-      .filter(_ => _.args && _.args.length)
-      .forEach(_ =>
-        _.args.forEach(a => {
-          let inputType = getGraphQLInputType(a.type)
+      .filter(field => field.args && field.args.length)
+      .forEach(field =>
+        field.args.forEach(arg => {
+          const inputType = getGraphQLInputType(arg.type)
           if (inputType) {
-            set(typesTree, `${type.name}.${_.name}.__args.${a.name}`, inputType)
+            set(typesTree, `${type.name}.${field.name}.__args.${arg.name}`, inputType)
           }
         })
       )
   )
 
-  types.forEach(t =>
-    t.fields.forEach(f => {
-      let outputType = getGraphQLOutputType(f.type)
+  types.forEach(type =>
+    type.fields.forEach(field => {
+      const outputType = getGraphQLOutputType(field.type)
       if (outputType) {
-        set(typesTree, `${t.name}.${f.name}.__shape`, outputType)
+        set(typesTree, `${type.name}.${field.name}.__shape`, outputType)
       }
     })
   )
 
-  return `
-    const typesTree = {
-      ${Object.entries(typesTree)
-        .map(([key, value]) => {
-          let entryCode = Object.entries(value as any)
-            .map(([k, v]: any) => {
-              const cleanShapeType = v.__shape && v.__shape.replace(/[\[\]!?]/g, '')
-              const fieldsCode =
-                v.__shape && typesTree.hasOwnProperty(cleanShapeType) ? `__fields: typesTree.${cleanShapeType},` : ''
+  return typesTree
+}
 
-              const argsCode = v.__args
-                ? `__args: {
-                      ${Object.entries(v.__args)
-                        .map(([k, v]) => `${k}: '${v}'`)
+/** Renders one field of the tree: a getter when it has args or a known shape, so the tree can reference itself lazily. */
+function renderTypesTreeField(typesTree: TypesTree, fieldName: string, field: TypesTreeField): string {
+  const cleanShapeType = field.__shape && field.__shape.replace(/[\[\]!?]/g, '')
+  const fieldsCode =
+    field.__shape && typesTree.hasOwnProperty(cleanShapeType as string) ? `__fields: typesTree.${cleanShapeType},` : ''
+
+  const argsCode = field.__args
+    ? `__args: {
+                      ${Object.entries(field.__args)
+                        .map(([argName, argType]) => `${argName}: '${argType}'`)
                         .join(',\n')}
                     }`
-                : ''
+    : ''
 
-              return fieldsCode || argsCode
-                ? `get ${k}() {
+  return fieldsCode || argsCode
+    ? `get ${fieldName}() {
                   return {
                     ${fieldsCode}
                     ${argsCode}
                   }
                 }`
-                : `${k}: {}`
-            })
-            .filter(Boolean)
-            .join(',\n')
-            .trim()
-          return (
-            entryCode &&
-            `
-              ${key}: { 
+    : `${fieldName}: {}`
+}
+
+/** Renders one `Type: { … }` entry, or `''` when the type contributes no fields. */
+function renderTypesTreeEntry(typesTree: TypesTree, typeName: string, fields: Record<string, TypesTreeField>): string {
+  const entryCode = Object.entries(fields)
+    .map(([fieldName, field]) => renderTypesTreeField(typesTree, fieldName, field))
+    .filter(Boolean)
+    .join(',\n')
+    .trim()
+
+  return entryCode
+    ? `
+              ${typeName}: { 
                 ${entryCode} 
               }`
-          )
-        })
+    : ''
+}
+
+/** Emits the `const typesTree = { … }` declaration the generated client uses to resolve arguments and nested shapes. */
+function getTypesTreeCode(types: IntrospectionObjectType[]) {
+  const typesTree = buildTypesTree(types)
+
+  return `
+    const typesTree = {
+      ${Object.entries(typesTree)
+        .map(([typeName, fields]) => renderTypesTreeEntry(typesTree, typeName, fields))
         .filter(Boolean)
         .join(',\n')}
     }
@@ -316,19 +336,18 @@ type IClientOptions = {
 
 type FetchIntrospectionOptions = Omit<IClientOptions, 'output' | 'introspectionEndpoint'>
 
-function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Omit<IClientOptions, 'output'>) {
-  const typesHash = md5(`${JSON.stringify(options)}__${JSON.stringify(types)}`)
-  const clientCacheFileName = `gql-ts-client__client__${typesHash}__${pkg.version}.json`
-  const clientCacheFilePath = path.resolve(tempDir, clientCacheFileName)
+/** The schema pieces both emitters need, partitioned once from the introspection types. */
+type PartitionedSchema = {
+  queries: ReadonlyArray<IntrospectionField>
+  mutations: ReadonlyArray<IntrospectionField>
+  enums: IntrospectionEnumType[]
+  scalars: IntrospectionEnumType[]
+  objectTypes: (IntrospectionObjectType | IntrospectionInputObjectType)[]
+  forInputExtraction: IntrospectionObjectType[]
+}
 
-  if (!options.skipCache && fs.existsSync(clientCacheFilePath)) {
-    const output: Partial<TypescriptClientOutput> = JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
-
-    if (output.js && output.mjs && output.typings) {
-      return output as TypescriptClientOutput
-    }
-  }
-
+/** Splits the introspection types into the operation, enum, scalar and object groups the emitters render. */
+function partitionSchema(types: ReadonlyArray<IntrospectionType>): PartitionedSchema {
   const queries = (<IntrospectionObjectType>types.find(it => it.name === 'Query'))?.fields || []
   const mutations = (<IntrospectionObjectType>types.find(it => it.name === 'Mutation'))?.fields || []
   const enums = types.filter(it => it.kind === 'ENUM' && !it.name.startsWith('__')) as IntrospectionEnumType[]
@@ -344,12 +363,15 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
     it => !it.name.startsWith('__') && ['OBJECT'].includes(it.kind)
   ) as IntrospectionObjectType[]
 
-  const clientName = options.clientName || 'client'
+  return { queries, mutations, enums, scalars, objectTypes, forInputExtraction }
+}
 
+/** Renders the client's runtime module: the enums, the schema resolution tree and one endpoint per operation. */
+function emitClientJs(schema: PartitionedSchema, options: Omit<IClientOptions, 'output'>, clientName: string): string {
   // language=JavaScript
-  const jsCode = `
+  return `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols
-    import { getApiEndpointCreator } from '${graphqlTsClientPath}/endpoint'
+    import { getApiEndpointCreator } from '${clientImportPath()}/endpoint'
     
     ${
       options.formatGraphQL || options.verbose
@@ -363,10 +385,10 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
     }
     
     // Enums
-    ${enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'js' })).join('\n')}
+    ${schema.enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'js' })).join('\n')}
 
     // Schema Resolution Tree
-    ${getTypesTreeCode(forInputExtraction)}
+    ${getTypesTreeCode(schema.forInputExtraction)}
 
     let verbose = ${Boolean(options.verbose)}
     let headers = {}
@@ -433,32 +455,34 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       },
       setUrl: (_url) => url = _url,
       queries: {
-        ${queries.map(query => gqlEndpointToCode('query', query, 'js')).join(',\n')}
+        ${schema.queries.map(query => gqlEndpointToCode('query', query, 'js')).join(',\n')}
       },
       mutations: {
-        ${mutations.map(mutation => gqlEndpointToCode('mutation', mutation, 'js')).join(',\n')}
+        ${schema.mutations.map(mutation => gqlEndpointToCode('mutation', mutation, 'js')).join(',\n')}
       }
     }
 
     export default ${clientName}`
+}
 
+/** Renders the client's `.d.ts`: the scalars, enums, arg and selection interfaces and the typed client object. */
+function emitClientTypings(schema: PartitionedSchema, clientName: string): string {
   // language=TypeScript
-  const typingsCode = `
+  return `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
-    import { DeepRequired } from 'ts-essentials'
-    import { Maybe, IRequestListener, IResponseListener, Endpoint } from '${graphqlTsClientPath}'
+    import { IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources } from '${clientImportPath()}'
 
     // Scalars
     export type IDate = string | Date
-    ${scalars.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'ts' })).join('\n')}
+    ${schema.scalars.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'ts' })).join('\n')}
 
     // Enums
-    ${enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'ts' })).join('\n')}
+    ${schema.enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'ts' })).join('\n')}
     
-    type AllEnums = ${enums.length ? enums.map(it => it.name).join(' | ') : 'never'}
+    type AllEnums = ${schema.enums.length ? schema.enums.map(it => it.name).join(' | ') : 'never'}
     
     // Args
-    ${[...queries, ...mutations]
+    ${[...schema.queries, ...schema.mutations]
       .map(query => {
         const argsType = getArgsType(query)
         return `export interface ${argsType.alias} ${argsType.type}`
@@ -466,7 +490,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       .join('\n')}
 
     // Input/Output Types
-    ${objectTypes
+    ${schema.objectTypes
       .map(
         it => `
     /**
@@ -477,7 +501,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       .join('\n')}
 
     // Selection Types
-    ${objectTypes
+    ${schema.objectTypes
       .filter(it => it.name !== 'Query')
       .map(it => gqlSchemaToCode(it, { selection: true, outputType: 'ts' }))
       .join('\n')}
@@ -492,14 +516,38 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
       setUrl: (url: string) => void,
       setRetryConfig: (options: { max: number, waitBeforeRetry?: number, before?: IResponseListener }) => void
       queries: {
-        ${queries.map(q => gqlEndpointToCode('query', q, 'ts')).join(',\n')}
+        ${schema.queries.map(q => gqlEndpointToCode('query', q, 'ts')).join(',\n')}
       },
       mutations: {
-        ${mutations.map(q => gqlEndpointToCode('mutation', q, 'ts')).join(',\n')}
+        ${schema.mutations.map(q => gqlEndpointToCode('mutation', q, 'ts')).join(',\n')}
       }
     }
 
     export default ${clientName}`
+}
+
+/** Stores one generated client under the temp dir so an unchanged schema regenerates from disk. */
+function writeClientCache(clientCacheFilePath: string, output: TypescriptClientOutput): void {
+  fs.writeFileSync(clientCacheFilePath, JSON.stringify(output))
+}
+
+function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Omit<IClientOptions, 'output'>) {
+  const typesHash = md5(`${JSON.stringify(options)}__${JSON.stringify(types)}`)
+  const clientCacheFileName = `gql-ts-client__client__${typesHash}__${pkg.version}.json`
+  const clientCacheFilePath = path.resolve(tempDir, clientCacheFileName)
+
+  if (!options.skipCache && fs.existsSync(clientCacheFilePath)) {
+    const output: Partial<TypescriptClientOutput> = JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
+
+    if (output.js && output.mjs && output.typings) {
+      return output as TypescriptClientOutput
+    }
+  }
+
+  const schema = partitionSchema(types)
+  const clientName = options.clientName || 'client'
+  const jsCode = emitClientJs(schema, options, clientName)
+  const typingsCode = emitClientTypings(schema, clientName)
 
   const output: TypescriptClientOutput = {
     js: esbuild.transformSync(jsCode, { format: 'cjs', loader: 'js' }).code,
@@ -507,7 +555,7 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
     typings: prettier.format(typingsCode, { semi: false, parser: 'typescript' }),
   }
 
-  fs.writeFileSync(clientCacheFilePath, JSON.stringify(output))
+  writeClientCache(clientCacheFilePath, output)
 
   return output
 }

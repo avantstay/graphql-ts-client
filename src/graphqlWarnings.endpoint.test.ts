@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getApiEndpointCreator } from './endpoint'
+import { createTestEndpointCreator } from './testSupport/endpointFixture'
 
 describe('Endpoint warning compatibility', () => {
   afterEach(() => jest.restoreAllMocks())
@@ -18,15 +18,7 @@ describe('Endpoint warning compatibility', () => {
         ...(shape !== 'legacy' ? { extensions: { warnings } } : {}),
       },
     })
-    const endpoint = getApiEndpointCreator({
-      getClient: () => ({ url: 'https://example.invalid/graphql', headers: {}, retryConfig: { max: 0, before: () => undefined } }),
-      requestListeners: [],
-      responseListeners: [listener],
-      typesTree: {},
-      maxAge: 0,
-      verbose: false,
-      formatGraphQL: (query: string) => query,
-    })('mutation', 'booking')
+    const endpoint = createTestEndpointCreator({ responseListeners: [listener] })('mutation', 'booking')
 
     const response = await endpoint.raw({ __alias: 'alterBooking' })
     await new Promise(resolve => setTimeout(resolve, 0))

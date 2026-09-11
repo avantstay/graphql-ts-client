@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: npx prettier --check .
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: yarn build
+      - run: yarn jest --ci
+      - run: yarn jest --ci
+        env:
+          GQL_CLIENT_DIST_PATH: .
+      - run: yarn test:dist

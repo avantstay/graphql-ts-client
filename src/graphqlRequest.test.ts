@@ -1,4 +1,5 @@
 import { graphqlRequest } from './graphqlRequest'
+import { clientWithRetries } from './testSupport/clientConfig'
 
 describe('GraphQLRequest', () => {
   it('Should request have proper structure', async () => {
@@ -17,28 +18,18 @@ describe('GraphQLRequest', () => {
       shouldRetry: false,
       failureMode: 'loud',
       axios: mockedAxios,
+      kind: 'query',
       queryName: 'sampleQueryName',
       query: 'sampleQuery',
       variables: { foo: 'bar', bar: 'foo' },
-      client: {
-        url: 'https://whatever.com',
-        headers: {},
-        retryConfig: {
-          max: 0,
-          before: () => void [1],
-        },
-      },
-    }).catch(err => err)
+      client: clientWithRetries(0),
+    })
 
     expect(result.status).toBe(200)
     expect(request).toMatchSnapshot()
-    expect(request).toBeDefined()
-    const [url, data, config] = request
-    expect(url).toEqual('https://whatever.com')
-    expect(config).toBeDefined()
+    const [url, data] = request
+    expect(url).toEqual('https://example.invalid/graphql')
     expect(data.operationName).toEqual('sampleQueryName')
-    expect(data.hasOwnProperty('query')).toEqual(true)
-    expect(data.hasOwnProperty('variables')).toEqual(true)
   })
 
   it('Should retry as many times as configured properly running a "before" hook', async () => {
@@ -53,18 +44,12 @@ describe('GraphQLRequest', () => {
     const result = await graphqlRequest({
       failureMode: 'loud',
       axios: mockedAxios,
+      kind: 'query',
       queryName: 'whatever',
       query: 'whatever',
       variables: {},
       requestHeaders: {},
-      client: {
-        url: 'https://whatever.com',
-        headers: {},
-        retryConfig: {
-          max: maxRetrials,
-          before: () => void [retryCount++],
-        },
-      },
+      client: clientWithRetries(maxRetrials, { before: () => void retryCount++ }),
     })
 
     expect(retryCount).toBe(2)
@@ -80,23 +65,17 @@ describe('GraphQLRequest', () => {
       }),
     } as any
 
-    const result = await graphqlRequest({
-      shouldRetry: false,
-      failureMode: 'loud',
-      axios: mockedAxios,
-      queryName: 'whatever',
-      query: 'whatever',
-      variables: {},
-      client: {
-        url: 'https://whatever.com',
-        headers: {},
-        retryConfig: {
-          max: maxRetrials,
-          before: () => void [retryCount++],
-        },
-      },
-    }).catch(err => err)
-
-    expect(result).toBeInstanceOf(Error)
+    await expect(
+      graphqlRequest({
+        shouldRetry: false,
+        failureMode: 'loud',
+        axios: mockedAxios,
+        kind: 'query',
+        queryName: 'whatever',
+        query: 'whatever',
+        variables: {},
+        client: clientWithRetries(maxRetrials, { before: () => void retryCount++ }),
+      })
+    ).rejects.toBeInstanceOf(Error)
   })
 })

@@ -52,7 +52,7 @@ describe('Generated Client', () => {
     expect(books[0]).toHaveProperty('author')
   })
 
-  it('should be able to make queries with optional args, not passing args obj', async () => {
+  it('should be able to make queries under an __alias', async () => {
     // noinspection TypeScriptValidateJSTypes
     const books = await client.queries.booksWithOptionalParams({
       __alias: 'helloWorld',
@@ -156,7 +156,7 @@ describe('Generated Client', () => {
     expect(requestData?.queryName).toBe('failingQuery')
   })
 
-  it('failing operations throw errors', async () => {
+  it('response listener is called for failing operations', async () => {
     let responseData: ResponseListenerInfo | undefined
     client.addResponseListener((data: any) => (responseData = data))
 
@@ -172,52 +172,24 @@ describe('Generated Client', () => {
     expect(responseData?.response.errors.length).toBeGreaterThan(0)
   })
 
-  it('removeRequestListener removes a previously added request listener', async () => {
+  it.each([
+    ['Request', 'remove'],
+    ['Request', 'unsubscribe'],
+    ['Response', 'remove'],
+    ['Response', 'unsubscribe'],
+  ])('a %s listener stops being called after %s', async (kind, detach) => {
     let callCount = 0
-    const listener = () => { callCount++ }
+    const listener = () => {
+      callCount++
+    }
 
-    client.addRequestListener(listener)
+    const unsubscribe = client[`add${kind}Listener`](listener)
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
 
-    client.removeRequestListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
+    if (detach === 'remove') client[`remove${kind}Listener`](listener)
+    else unsubscribe()
 
-  it('removeResponseListener removes a previously added response listener', async () => {
-    let callCount = 0
-    const listener = () => { callCount++ }
-
-    client.addResponseListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    client.removeResponseListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
-
-  it('addRequestListener returns an unsubscribe function', async () => {
-    let callCount = 0
-    const unsubscribe = client.addRequestListener(() => { callCount++ })
-
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    unsubscribe()
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
-
-  it('addResponseListener returns an unsubscribe function', async () => {
-    let callCount = 0
-    const unsubscribe = client.addResponseListener(() => { callCount++ })
-
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    unsubscribe()
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
   })
@@ -228,6 +200,43 @@ describe('Generated Client', () => {
     hello: String
   }
 `
-    expect(generateTypescriptClientFromSDL(sdlString, { endpoint: 'https://sample.endpoint.com/graphl' })).toMatchSnapshot()
+    // Unset GQL_CLIENT_DIST_PATH so the snapshot records the published module specifier.
+    const previousDistPath = process.env.GQL_CLIENT_DIST_PATH
+    delete process.env.GQL_CLIENT_DIST_PATH
+    try {
+      expect(
+        generateTypescriptClientFromSDL(sdlString, { endpoint: 'https://sample.endpoint.com/graphl', skipCache: true })
+      ).toMatchSnapshot()
+    } finally {
+      if (previousDistPath === undefined) delete process.env.GQL_CLIENT_DIST_PATH
+      else process.env.GQL_CLIENT_DIST_PATH = previousDistPath
+    }
+  })
+})
+
+describe('v13 generator output', () => {
+  const sdl = `
+    type Query { user(id: ID!): User! }
+    type Mutation { updateUser(input: String!): User }
+    type User { id: ID!, name: String, rooms: [Room!]!, tags: [String]!, photos: [Photo] }
+    type Room { id: ID!, beds: Int! }
+    type Photo { url: String! }
+  `
+  const output = generateTypescriptClientFromSDL(sdl, {
+    endpoint: 'https://sample.endpoint.com/graphql',
+    clientName: 'sample',
+    skipCache: true,
+  })
+
+  it('declares call options and MutationEndpoint in typings', () => {
+    expect(output.typings).toContain('__settledSources?: MutationSources')
+    expect(output.typings).toContain(
+      '/** Required by settle(): the settled results this payload was built from, or \'none\'. See @avantstay/graphql-ts-client README, "Writing with settle()". */'
+    )
+    expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
+    expect(output.typings).toMatch(/user: Endpoint</)
+    expect(output.typings).toMatch(
+      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
+    )
   })
 })
