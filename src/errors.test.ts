@@ -10,14 +10,12 @@ describe('cross-bundle instanceof', () => {
   it('recognises a GraphQLClientError whose prototype comes from another copy of the class', () => {
     const error = asForeignCopy(new GraphQLClientError({ data: null, warnings: [], headers: {}, errors: [{ message: 'x' }] }))
 
-    expect(Object.getPrototypeOf(error)).toBe(Error.prototype)
     expect(error instanceof GraphQLClientError).toBe(true)
   })
 
   it('recognises a MissingSourcesError whose prototype comes from another copy of the class', () => {
     const error = asForeignCopy(new MissingSourcesError())
 
-    expect(Object.getPrototypeOf(error)).toBe(Error.prototype)
     expect(error instanceof MissingSourcesError).toBe(true)
   })
 

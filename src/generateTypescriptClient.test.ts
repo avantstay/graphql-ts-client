@@ -52,7 +52,7 @@ describe('Generated Client', () => {
     expect(books[0]).toHaveProperty('author')
   })
 
-  it('should be able to make queries with optional args, not passing args obj', async () => {
+  it('should be able to make queries under an __alias', async () => {
     // noinspection TypeScriptValidateJSTypes
     const books = await client.queries.booksWithOptionalParams({
       __alias: 'helloWorld',
@@ -156,7 +156,7 @@ describe('Generated Client', () => {
     expect(requestData?.queryName).toBe('failingQuery')
   })
 
-  it('failing operations throw errors', async () => {
+  it('response listener is called for failing operations', async () => {
     let responseData: ResponseListenerInfo | undefined
     client.addResponseListener((data: any) => (responseData = data))
 
@@ -172,60 +172,24 @@ describe('Generated Client', () => {
     expect(responseData?.response.errors.length).toBeGreaterThan(0)
   })
 
-  it('removeRequestListener removes a previously added request listener', async () => {
+  it.each([
+    ['Request', 'remove'],
+    ['Request', 'unsubscribe'],
+    ['Response', 'remove'],
+    ['Response', 'unsubscribe'],
+  ])('a %s listener stops being called after %s', async (kind, detach) => {
     let callCount = 0
     const listener = () => {
       callCount++
     }
 
-    client.addRequestListener(listener)
+    const unsubscribe = client[`add${kind}Listener`](listener)
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
 
-    client.removeRequestListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
+    if (detach === 'remove') client[`remove${kind}Listener`](listener)
+    else unsubscribe()
 
-  it('removeResponseListener removes a previously added response listener', async () => {
-    let callCount = 0
-    const listener = () => {
-      callCount++
-    }
-
-    client.addResponseListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    client.removeResponseListener(listener)
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
-
-  it('addRequestListener returns an unsubscribe function', async () => {
-    let callCount = 0
-    const unsubscribe = client.addRequestListener(() => {
-      callCount++
-    })
-
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    unsubscribe()
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-  })
-
-  it('addResponseListener returns an unsubscribe function', async () => {
-    let callCount = 0
-    const unsubscribe = client.addResponseListener(() => {
-      callCount++
-    })
-
-    await client.queries.booksWithoutParams({ title: true })
-    expect(callCount).toBe(1)
-
-    unsubscribe()
     await client.queries.booksWithoutParams({ title: true })
     expect(callCount).toBe(1)
   })
@@ -272,7 +236,7 @@ describe('v13 generator output', () => {
     expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
     expect(output.typings).toMatch(/user: Endpoint</)
     expect(output.typings).toMatch(
-      /import\s*{\s*Maybe,\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
+      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
     )
   })
 })

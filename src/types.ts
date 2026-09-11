@@ -38,23 +38,32 @@ type ArrayElement<ArrayType extends readonly unknown[]> = ArrayType extends read
 
 type Primitive = Date | string | number | boolean | null | undefined
 
+/** The array arm of `Projection`: a list of leaves stays as it is, a list of objects is projected element by element. */
+type ProjectArray<Selection, Base extends readonly unknown[], E> = ArrayElement<Base> extends Primitive | E
+  ? ArrayElement<Base>[]
+  : Projection<Defined<Selection>, ArrayElement<Base>, E>[]
+
+/** The leaf arm of `Projection`: an unselected leaf may be absent, a selected one is exactly its base type. */
+type ProjectLeaf<Selection, Base> = Selection extends undefined ? Base | undefined : Base
+
+/** One property of `ProjectObject`: a boolean-selected key keeps the base type as it is, an array is projected element by element, anything else is projected one level deeper. */
+type ProjectField<Selection, Base, k extends keyof Selection & keyof Base, E> = Selection[k] extends boolean
+  ? Base[k]
+  : Base[k] extends Array<infer A>
+  ? Projection<Defined<Selection[k]>, A, E>[]
+  : Projection<Defined<Selection[k]>, Base[k], E>
+
+/** The object arm of `Projection`: every key the selection and the base share, projected one level deeper. */
+type ProjectObject<Selection, Base, E> = {
+  [k in keyof Selection & keyof Base]: ProjectField<Selection, Base, k, E>
+}
+
 // Projection is the resulting type of Selection (type generated out of a query) applied to Base (generated graphql type)
 export type Projection<Selection, Base, E = never> = Base extends Array<any>
-  ? ArrayElement<Base> extends Primitive | E
-    ? ArrayElement<Base>[]
-    : Projection<Defined<Selection>, ArrayElement<Base>, E>[]
+  ? ProjectArray<Selection, Base, E>
   : Base extends Primitive | E
-  ? // Is primitive and extends undefined
-    Selection extends undefined
-    ? Base | undefined
-    : Base
-  : {
-      [k in keyof Selection & keyof Base]: Selection[k] extends boolean
-        ? Base[k]
-        : Base[k] extends Array<infer A>
-        ? Projection<Defined<Selection[k]>, A, E>[]
-        : Projection<Defined<Selection[k]>, Base[k], E>
-    }
+  ? ProjectLeaf<Selection, Base>
+  : ProjectObject<Selection, Base, E>
 
 export type Unpacked<T> = T extends (infer U)[]
   ? U
@@ -66,16 +75,18 @@ export type Unpacked<T> = T extends (infer U)[]
 
 export type Replacement<M extends [any, any], T> = M extends any ? ([T] extends [M[0]] ? M[1] : never) : never
 
+/** One value of `DeepReplace`: recurse into an object, leave every other value as it is. `T[P]` stays an indexed access, which never distributes. */
+type DeepReplaceValue<T, P extends keyof T, Ignore, M extends [any, any]> = T[P] extends object
+  ? DeepReplace<T[P], Ignore, M>
+  : T[P]
+
+/** One matched leaf of `DeepReplace`: an ignored type is only recursed into, anything else is swapped for its replacement. */
+type ReplaceLeaf<T, P extends keyof T, Ignore, M extends [any, any]> = T[P] extends Ignore
+  ? DeepReplaceValue<T, P, Ignore, M>
+  : Replacement<M, T[P]>
+
 export type DeepReplace<T, Ignore, M extends [any, any]> = {
-  [P in keyof T]: T[P] extends M[0]
-    ? T[P] extends Ignore
-      ? T[P] extends object
-        ? DeepReplace<T[P], Ignore, M>
-        : T[P]
-      : Replacement<M, T[P]>
-    : T[P] extends object
-    ? DeepReplace<T[P], Ignore, M>
-    : T[P]
+  [P in keyof T]: T[P] extends M[0] ? ReplaceLeaf<T, P, Ignore, M> : DeepReplaceValue<T, P, Ignore, M>
 }
 
 /** What `raw()` returns: the server payload untouched, plus the outcome fields. */
@@ -134,7 +145,7 @@ const GRAPHQL_CLIENT_ERROR_BRAND = Symbol.for('@avantstay/graphql-ts-client/Grap
 function isBrandedInstance(value: unknown, brand: symbol, classPrototype: object): boolean {
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false
   // The prototype arm stays because the es5 `_classCallCheck` runs `this instanceof Ctor` before the constructor sets the brand.
-  return (value as any)[brand] === true || Object.prototype.isPrototypeOf.call(classPrototype, value)
+  return (value as Record<symbol, unknown>)[brand] === true || Object.prototype.isPrototypeOf.call(classPrototype, value)
 }
 
 /** Sets `error.name` non-enumerably, like `Error.prototype.name`, so it stays out of `{ ...error }` and JSON.stringify. */

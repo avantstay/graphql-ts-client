@@ -13,11 +13,15 @@ import {
   GraphQLClientError,
   IRequestListener,
   IResponseListener,
+  JsonOutput,
   LogInfo,
+  MutationEndpoint,
   Projection,
+  RawEndpoint,
   ResponseData,
   ResponseListenerInfo,
   SettleEndpoint,
+  TolerateSettledSources,
 } from './types'
 
 const KEYS_KEPT_IN_DOCUMENT = ['__args', '__typename']
@@ -58,23 +62,33 @@ function readCallOptions(jsonQuery: unknown): {
 const executeListeners = (listeners: IResponseListener[], data: ResponseListenerInfo) =>
   setTimeout(() => listeners.forEach(runResponseListener => runResponseListener(data)))
 
+/** Everything the endpoint factory needs from the generated client that owns it. */
+type ApiConfig = {
+  getClient: () => ClientConfig
+  requestListeners: IRequestListener[]
+  responseListeners: IResponseListener[]
+  typesTree: any
+  maxAge: number
+  verbose: boolean
+  formatGraphQL: any
+  errorsParser?: (errors: any[]) => any
+}
+
+/** One overload per operation kind, so a mutation's `settle()` requires `__settledSources` and a query's does not. */
+type ApiEndpointCreator = {
+  <I = any, O = any, E = any>(kind: 'query', queryName: string): Endpoint<I, O, E>
+  <I = any, O = any, E = any>(kind: 'mutation', queryName: string): MutationEndpoint<I, O, E>
+}
+
 /** Builds the endpoint factory a generated client uses to create one callable endpoint per query and mutation. */
-export const getApiEndpointCreator =
-  (apiConfig: {
-    getClient: () => ClientConfig
-    requestListeners: IRequestListener[]
-    responseListeners: IResponseListener[]
-    typesTree: any
-    maxAge: number
-    verbose: boolean
-    formatGraphQL: any
-    errorsParser?: (errors: any[]) => any
-  }) =>
-  <I = any, O = any, E = any>(kind: 'mutation' | 'query', queryName: string): Endpoint<I, O, E> => {
+export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator {
+  return <I = any, O = any, E = any>(kind: 'mutation' | 'query', queryName: string): Endpoint<I, O, E> => {
+    type Out = JsonOutput<O, E>
+
     type RawCall = <S extends I>(
       failureMode: 'loud' | 'silent',
       jsonQuery?: S
-    ) => Promise<ClassifiedRawResponse<Projection<S, O>>>
+    ) => Promise<ClassifiedRawResponse<Projection<S, Out, E>>>
 
     const logIfVerbose = (logOptions: object, outcome: { response?: unknown; error?: Error }, start: number) => {
       if (!apiConfig.verbose || !globalThis.document) return
@@ -83,7 +97,7 @@ export const getApiEndpointCreator =
 
     const projectRootField = <S extends I>(result: ResponseData, alias: string) => {
       const { classification, ...rawFields } = result
-      const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<Projection<S, O>>
+      const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<Projection<S, Out, E>>
       return attachClassification(rawResult, classification as Classification)
     }
 
@@ -148,16 +162,16 @@ export const getApiEndpointCreator =
       }
     }
 
-    const callEndpoint = async <S extends I>(jsonQuery?: S): Promise<Projection<S, O>> => {
+    const callEndpoint = async <S extends I>(jsonQuery?: S): Promise<Projection<S, Out, E>> => {
       const { data } = await rawEndpoint('loud', jsonQuery)
       return data
     }
 
     const endpoint = callEndpoint as typeof callEndpoint & {
-      raw: (jsonQuery?: I) => Promise<ClassifiedRawResponse<Projection<I, O>>>
+      raw: RawEndpoint<I, Out, E>
       memo: typeof callEndpoint
-      memoRaw: (jsonQuery?: I) => Promise<ClassifiedRawResponse<Projection<I, O>>>
-      settle: SettleEndpoint<I, O, never>
+      memoRaw: RawEndpoint<I, Out, E>
+      settle: SettleEndpoint<I, Out, E>
     }
 
     const memoizeeOptions = {
@@ -165,16 +179,16 @@ export const getApiEndpointCreator =
       isSerialized: true,
     }
 
-    endpoint.raw = rawEndpoint.bind(null, 'silent')
+    endpoint.raw = <S extends I>(jsonQuery?: S & TolerateSettledSources) => rawEndpoint<S>('silent', jsonQuery)
     endpoint.memo = memoize(endpoint, memoizeeOptions)
 
-    endpoint.settle = async <S extends I>(jsonQuery?: S): Promise<SettledResponse<Projection<S, O>>> => {
+    endpoint.settle = async <S extends I>(jsonQuery?: S): Promise<SettledResponse<Projection<S, Out, E>>> => {
       if (kind === 'mutation') {
         const blocking = findBlockingSource(validateSources(readCallOptions(jsonQuery).settledSources))
         if (blocking) return blockedBySource(blocking)
       }
 
-      let rawResult: ClassifiedRawResponse<Projection<S, O>>
+      let rawResult: ClassifiedRawResponse<Projection<S, Out, E>>
       try {
         rawResult = await rawEndpoint('silent', jsonQuery)
       } catch (error) {
@@ -191,5 +205,6 @@ export const getApiEndpointCreator =
     }
     endpoint.memoRaw = Object.assign(memoRawWrapper, memoizedRaw)
 
-    return endpoint as unknown as Endpoint<I, O, E>
+    return endpoint
   }
+}

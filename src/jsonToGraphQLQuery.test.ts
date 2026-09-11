@@ -29,7 +29,7 @@ describe('jsonToGraphQLQuery', () => {
       },
     })
 
-    expect(response).not.toBeNull()
+    expect(response.query).toBe('query testing($foo: UUID!) { testing(foo:$foo) { something } }')
     expect(originalArgs).toBe(JSON.stringify(jsonQuery))
   })
 

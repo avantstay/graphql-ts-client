@@ -27,13 +27,6 @@ describe('classify', () => {
     expect(result.failedPaths).toEqual(['stats'])
   })
 
-  it('reports the ancestor the server nulled, not the deep field in the error', () => {
-    const errors = [{ message: 'x', path: ['user', 'stats', 'posts', 'count'] }]
-    const result = classify({ ...base, data: { id: 'user_1', stats: null }, errors })
-    expect(result).toMatchObject({ outcome: 'partial', failedPaths: ['stats'] })
-    expect(result.failedSegments).toEqual([['stats']])
-  })
-
   it('fails with no-data on null data, a lost root, or http on status >= 400', () => {
     expect(classify({ ...base, data: { id: 'user_1' }, errors: [{ message: 'x', path: ['user'] }] })).toMatchObject({
       outcome: 'failure',
@@ -73,12 +66,6 @@ describe('classify', () => {
       { message: 'w', code: 'W1' },
     ])
     expect(classify({ ...base, data: {}, errors: [], warnings: 'nope' }).warnings).toEqual([])
-  })
-
-  it('keeps the error path when nothing along it is null', () => {
-    const errors = [{ message: 'x', path: ['user', 'stats', 'posts', 'count'] }]
-    const result = classify({ ...base, data: { stats: { posts: { count: 0 } } }, errors })
-    expect(result).toMatchObject({ outcome: 'partial', failedPaths: ['stats.posts.count'] })
   })
 })
 

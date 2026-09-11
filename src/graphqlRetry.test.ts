@@ -1,12 +1,5 @@
 import { graphqlRequest } from './graphqlRequest'
-
-function clientWithRetries(max: number, extra: { waitBeforeRetry?: number; before?: (info: any) => void } = {}) {
-  return {
-    url: 'https://example.invalid/graphql',
-    headers: {},
-    retryConfig: { max, before: () => undefined, ...extra },
-  }
-}
+import { clientWithRetries } from './testSupport/clientConfig'
 
 function countingAxios(responses: Array<{ status: number; data?: unknown }>) {
   const calls: number[] = []

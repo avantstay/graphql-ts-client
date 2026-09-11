@@ -192,7 +192,6 @@ describe('MutationEndpoint type', () => {
   it('stays callable as a function (compile-time check)', async () => {
     mockPost({ data: { updateUser: { id: 'user_1' } } })
     const typed: MutationEndpoint<any, any, any> = updateUser as any
-    await typed({ id: true })
-    expect(typeof typed).toBe('function')
+    await expect(typed({ id: true })).resolves.toEqual({ id: 'user_1' })
   })
 })

@@ -549,7 +549,7 @@ They configure the request and are never sent to the server. Any other top-level
 Rules for `__settledSources`:
 
 - Must be a non-empty array of settled results (the values `settle()` calls resolved to, kept as they were), or exactly the string
-  `'none'`. See [What `__settledSources` expects](#what-__settledsources-expects). `'none'`.
+  `'none'`. See [What `__settledSources` expects](#what-__settledsources-expects).
 - Omitting it on `settle()` of a mutation is a TypeScript error. Passing `[]`, `null`, an object, or an array holding anything
   that did not come from `settle()` makes the promise reject with `MissingSourcesError`.
 - Direct calls and `raw()` accept it and ignore it; they do not check sources.

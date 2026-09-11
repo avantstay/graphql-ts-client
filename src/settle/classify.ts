@@ -1,10 +1,10 @@
 import { normalizeErrors } from './errors'
 import { resolveFailedPath } from './resolve'
 import { pathToString, setUndefinedAtPath } from './paths'
-import { brandSettled, FailureReason, PathSegment, SettledError, SettledResponse, Warning } from './types'
+import { brandSettled, FailureReason, PathSegment, SettledError, SettledFailure, SettledResponse, Warning } from './types'
 
 /** Everything `classify()` needs from one response: the root field's value, its errors and warnings, and the HTTP status. */
-export type ClassifyInput = {
+type ClassifyInput = {
   data: unknown
   errors: unknown
   warnings: unknown
@@ -19,10 +19,11 @@ type ClassificationBase = {
   failedSegments: PathSegment[][]
 }
 
+/** A classification whose outcome is `'failure'`, so `reason` is always present and the data is always `null`. */
+export type FailedClassification = ClassificationBase & { outcome: 'failure'; reason: FailureReason }
+
 /** Mirrors SettledResponse's shape, so `reason` exists on the failure arm only and no consumer has to cast. */
-export type Classification =
-  | (ClassificationBase & { outcome: 'success' | 'partial' })
-  | (ClassificationBase & { outcome: 'failure'; reason: FailureReason })
+export type Classification = (ClassificationBase & { outcome: 'success' | 'partial' }) | FailedClassification
 
 function normalizeWarnings(rawWarnings: unknown): Warning[] {
   if (!Array.isArray(rawWarnings)) return []
@@ -84,13 +85,19 @@ export function applyFailedPaths(data: unknown, failedSegments: PathSegment[][])
   for (const segments of failedSegments) setUndefinedAtPath(data, segments)
 }
 
+/** Assembles the branded failure result a failed classification describes; no caller has to supply a discarded `data`. */
+export function toSettledFailure(classification: FailedClassification, status?: number): SettledFailure {
+  const { errors, warnings, failedPaths, reason } = classification
+  return brandSettled<SettledFailure>({ errors, warnings, failedPaths, status, outcome: 'failure', reason, data: null })
+}
+
 /** Assembles the branded `SettledResponse` a classification describes. */
 export function toSettled<Data>(data: Data, classification: Classification, status?: number): SettledResponse<Data> {
   const { errors, warnings, failedPaths } = classification
   const shared = { errors, warnings, failedPaths, status }
   switch (classification.outcome) {
     case 'failure':
-      return brandSettled({ ...shared, outcome: 'failure' as const, reason: classification.reason, data: null })
+      return toSettledFailure(classification, status)
     case 'partial':
       return brandSettled({ ...shared, outcome: 'partial' as const, data })
     case 'success':

@@ -1,4 +1,4 @@
-// The package's public settle surface. Internals (classify, settleRaw, sources) are imported directly and are not exported here.
+// The package's public settle surface. Everything else under settle/ is internal and is imported directly, not re-exported here.
 export { isSettled, SETTLED_BRAND } from './types'
 export { failedAt, errorsAt, pathToString, parsePath, isPrefixPath } from './paths'
 export type {

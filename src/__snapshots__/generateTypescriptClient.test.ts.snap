@@ -184,9 +184,7 @@ export {
 };
 ",
   "typings": "// noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
-import { DeepRequired } from "ts-essentials"
 import {
-  Maybe,
   IRequestListener,
   IResponseListener,
   Endpoint,

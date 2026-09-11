@@ -1,4 +1,4 @@
-import { errorsAt, failedAt, getAtPath, isPrefixPath, parsePath, pathToString, setUndefinedAtPath } from './paths'
+import { errorsAt, failedAt, isPrefixPath, parsePath, pathToString, setUndefinedAtPath } from './paths'
 import { AnySettled } from './types'
 
 describe('paths', () => {
@@ -19,7 +19,8 @@ describe('paths', () => {
     setUndefinedAtPath(value, ['user', 'rooms', 0, 'beds'])
     expect(value.user.rooms[0]).toEqual({ beds: undefined })
     setUndefinedAtPath(value, ['missing', 'leaf'])
-    expect(getAtPath(value, ['missing'])).toBeUndefined()
+    expect(value).toEqual({ user: { rooms: [{ beds: undefined }] } })
+    expect('missing' in value).toBe(false)
   })
 
   it('failedAt and errorsAt look under a path', () => {

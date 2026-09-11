@@ -1,5 +1,5 @@
 import { MissingSourcesError } from '../types'
-import { toSettled } from './classify'
+import { toSettledFailure } from './classify'
 import { AnySettled, isSettled, MutationSources, SettledResponse } from './types'
 
 /** A mutation may only be built from checked reads, so an unrecognised `__settledSources` is a programming error, not a failed outcome. */
@@ -16,7 +16,7 @@ export function findBlockingSource(sources: MutationSources): AnySettled | undef
 
 /** The unsent-mutation result for a blocking source, carrying that source's errors, warnings and failed paths. */
 export function blockedBySource(blocking: AnySettled): SettledResponse<never> {
-  return toSettled<never>(null as never, {
+  return toSettledFailure({
     outcome: 'failure',
     reason: 'partial-source',
     errors: blocking.errors,
