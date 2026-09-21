@@ -615,6 +615,4 @@ throws for any other reason: transport failures become `outcome: 'failure', reas
 1. Open a PR that bumps `version` in `package.json`, get it reviewed and merged into `master`.
 2. In GitHub, go to Actions → "Publish to npm" → Run workflow on `master`.
 
-The job runs the tests, skips if the version is already on npm, and publishes with npm trusted publishing. A version containing a
-`-` (e.g. `13.0.0-rc.1`) publishes under the `next` dist-tag instead of `latest`, so anyone installing
-`@avantstay/graphql-ts-client@latest` is unaffected until the prerelease is promoted.
+The job runs the tests, skips if the version is already on npm, and publishes with npm trusted publishing.
