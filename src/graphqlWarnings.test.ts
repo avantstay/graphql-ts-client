@@ -1,4 +1,5 @@
-import { graphqlRequest } from './graphqlRequest'
+import { graphqlRequest, GraphqlRequestOptions } from './graphqlRequest'
+import { clientWithRetries } from './testSupport/clientConfig'
 import { GraphQLClientError } from './types'
 
 const legacyWarnings = [{ message: 'Legacy warning' }]
@@ -6,12 +7,13 @@ const extensionWarnings = [{ message: 'Extension warning' }]
 const data = { booking: null }
 const errors = [{ message: 'Cannot modify booking', extensions: { code: 'SERVICE_DEFINED', requestId: 'request-1' } }]
 
-const requestOptions = {
+const requestOptions: Omit<GraphqlRequestOptions, 'failureMode' | 'axios'> = {
   shouldRetry: false,
+  kind: 'query',
   queryName: 'booking',
   query: 'mutation booking { booking }',
   variables: {},
-  client: { url: 'https://example.invalid/graphql', headers: {}, retryConfig: { max: 0, before: () => undefined } },
+  client: clientWithRetries(0),
 }
 
 describe('GraphQL warning envelopes', () => {

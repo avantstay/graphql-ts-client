@@ -7,3 +7,4 @@ dist
 .run
 __testClient.d.ts
 __testClient.js
+__testClient.mjs

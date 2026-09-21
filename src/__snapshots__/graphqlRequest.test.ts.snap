@@ -2,7 +2,7 @@
 
 exports[`GraphQLRequest Should request have proper structure 1`] = `
 Arguments [
-  "https://whatever.com",
+  "https://example.invalid/graphql",
   {
     "operationName": "sampleQueryName",
     "query": "sampleQuery",

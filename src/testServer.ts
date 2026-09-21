@@ -30,7 +30,6 @@ const typeDefs = gql`
   type Query {
     booksWithoutParams: [Book]
     booksWithOptionalParams(params: BookSearchParamsAllOptional! = {}): [Book]
-    booksWithRequiredParams(params: BookSearchParamsSomeRequired!): [Book]
     failingQuery(id: String!): String
   }
 `
@@ -56,7 +55,6 @@ const resolvers = {
   Query: {
     booksWithoutParams: () => books,
     booksWithOptionalParams: (_: any, { params = {} }: { params: { title?: string; author?: string } }) => filterBooks(params),
-    booksWithRequiredParams: (_: any, { params }: { params: { title: string; author?: string } }) => filterBooks(params),
     failingQuery: () => {
       throw new Error('Failed lorem ipsum dolor')
     },
