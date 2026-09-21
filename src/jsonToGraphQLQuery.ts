@@ -1,6 +1,7 @@
 import cloneDeep from 'lodash/cloneDeep.js'
 import fromEntries from 'lodash/fromPairs.js'
 import entries from 'lodash/toPairs.js'
+import { OperationKind } from './types'
 
 const VAR_PREFIX = '@@VAR@@'
 const VAR_PREFIX_LENGTH = VAR_PREFIX.length
@@ -18,7 +19,7 @@ export function jsonToGraphQLQuery({
   jsonQuery = {},
   typesTree,
 }: {
-  kind: 'query' | 'mutation'
+  kind: OperationKind
   queryName: string
   alias?: string
   jsonQuery: any

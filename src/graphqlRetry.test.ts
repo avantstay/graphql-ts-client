@@ -1,4 +1,4 @@
-import { graphqlRequest } from './graphqlRequest'
+import { graphqlRequest, GraphqlRequestOptions } from './graphqlRequest'
 import { clientWithRetries } from './testSupport/clientConfig'
 
 function countingAxios(responses: Array<{ status: number; data?: unknown }>) {
@@ -18,7 +18,12 @@ function axiosReturning(responses: Array<{ status: number; data?: unknown }>) {
 
 const noDataResponse = { status: 200, data: { data: null, errors: [{ message: 'nothing came back' }] } }
 
-const common = { queryName: 'user', query: 'query user { user { id } }', variables: {}, failureMode: 'silent' as const }
+const common: Pick<GraphqlRequestOptions, 'queryName' | 'query' | 'variables' | 'failureMode'> = {
+  queryName: 'user',
+  query: 'query user { user { id } }',
+  variables: {},
+  failureMode: 'silent',
+}
 
 describe('retry policy', () => {
   it('retries a query on http failure until it succeeds', async () => {

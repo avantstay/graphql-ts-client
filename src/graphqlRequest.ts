@@ -1,7 +1,7 @@
 import _axios, { AxiosStatic } from 'axios'
 import { classify, Classification } from './settle/classify'
 import { attachClassification } from './settle/settleRaw'
-import { ClientConfig, GraphQLClientError, ResponseData } from './types'
+import { ClientConfig, FailureMode, GraphQLClientError, OperationKind, ResponseData } from './types'
 
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
 
@@ -88,6 +88,20 @@ function buildResponse(
   return { response, classification }
 }
 
+export type GraphqlRequestOptions = {
+  shouldRetry?: boolean
+  failureMode: FailureMode
+  axios?: AxiosStatic
+  kind: OperationKind
+  client: ClientConfig
+  /** The alias used in the document and as the root key of `data`. */
+  queryName: string
+  query: string
+  requestHeaders?: { [_key: string]: any }
+  variables: { [_key: string]: any }
+  errorsParser?: (errors: any[]) => any
+}
+
 /** Posts one GraphQL operation, retrying eligible queries, and returns the classified response. */
 export async function graphqlRequest({
   shouldRetry = true,
@@ -100,19 +114,7 @@ export async function graphqlRequest({
   variables,
   failureMode,
   errorsParser,
-}: {
-  shouldRetry?: boolean
-  failureMode: 'loud' | 'silent'
-  axios?: AxiosStatic
-  kind: 'query' | 'mutation'
-  client: ClientConfig
-  /** The alias used in the document and as the root key of `data`. */
-  queryName: string
-  query: string
-  requestHeaders?: { [_key: string]: any }
-  variables: { [_key: string]: any }
-  errorsParser?: (errors: any[]) => any
-}) {
+}: GraphqlRequestOptions) {
   let lastResponse!: ResponseData
   // Mutations are never retried: a mutation that returned errors has an unknown server-side outcome.
   const maxRetrials = shouldRetry && kind === 'query' ? client.retryConfig.max : 0

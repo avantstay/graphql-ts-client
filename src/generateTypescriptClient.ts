@@ -24,7 +24,7 @@ import os from 'os'
 import path from 'path'
 import prettier from 'prettier'
 import pkg from '../package.json'
-import { TypescriptClientOutput } from './types'
+import { OperationKind, TypescriptClientOutput } from './types'
 
 const tempDir = fs.realpathSync(os.tmpdir())
 
@@ -131,7 +131,7 @@ function getArgsType(endpoint: IntrospectionField) {
   return { alias: Case.pascal(`${endpoint.name}Args`), type: argsType, optional: argsFullyOptional }
 }
 
-function gqlEndpointToCode(kind: 'mutation' | 'query', endpoint: IntrospectionField, codeOutputType: 'ts' | 'js'): string {
+function gqlEndpointToCode(kind: OperationKind, endpoint: IntrospectionField, codeOutputType: 'ts' | 'js'): string {
   const selectionType = gqlTypeToTypescript(endpoint.type, {
     isInput: false,
     selection: true,

@@ -10,12 +10,14 @@ import { SettledResponse } from './settle/types'
 import {
   ClientConfig,
   Endpoint,
+  FailureMode,
   GraphQLClientError,
   IRequestListener,
   IResponseListener,
   JsonOutput,
   LogInfo,
   MutationEndpoint,
+  OperationKind,
   Projection,
   RawEndpoint,
   ResponseData,
@@ -76,32 +78,41 @@ type ApiConfig = {
 
 /** One overload per operation kind, so a mutation's `settle()` requires `__settledSources` and a query's does not. */
 type ApiEndpointCreator = {
-  <I = any, O = any, E = any>(kind: 'query', queryName: string): Endpoint<I, O, E>
-  <I = any, O = any, E = any>(kind: 'mutation', queryName: string): MutationEndpoint<I, O, E>
+  <Selectable = any, Result = any, Ignored = any>(kind: 'query', queryName: string): Endpoint<Selectable, Result, Ignored>
+  <Selectable = any, Result = any, Ignored = any>(kind: 'mutation', queryName: string): MutationEndpoint<
+    Selectable,
+    Result,
+    Ignored
+  >
 }
 
 /** Builds the endpoint factory a generated client uses to create one callable endpoint per query and mutation. */
 export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator {
-  return <I = any, O = any, E = any>(kind: 'mutation' | 'query', queryName: string): Endpoint<I, O, E> => {
-    type Out = JsonOutput<O, E>
+  return <Selectable = any, Result = any, Ignored = any>(
+    kind: OperationKind,
+    queryName: string
+  ): Endpoint<Selectable, Result, Ignored> => {
+    type JsonResult = JsonOutput<Result, Ignored>
 
-    type RawCall = <S extends I>(
-      failureMode: 'loud' | 'silent',
-      jsonQuery?: S
-    ) => Promise<ClassifiedRawResponse<Projection<S, Out, E>>>
+    type RawCall = <Selection extends Selectable>(
+      failureMode: FailureMode,
+      jsonQuery?: Selection
+    ) => Promise<ClassifiedRawResponse<Projection<Selection, JsonResult, Ignored>>>
 
     const logIfVerbose = (logOptions: object, outcome: { response?: unknown; error?: Error }, start: number) => {
       if (!apiConfig.verbose || !globalThis.document) return
       logRequest({ ...logOptions, ...outcome, duration: +new Date() - start } as LogInfo)
     }
 
-    const projectRootField = <S extends I>(result: ResponseData, alias: string) => {
+    const projectRootField = <Selection extends Selectable>(result: ResponseData, alias: string) => {
       const { classification, ...rawFields } = result
-      const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<Projection<S, Out, E>>
+      const rawResult = { ...rawFields, data: rawFields.data?.[alias] } as ClassifiedRawResponse<
+        Projection<Selection, JsonResult, Ignored>
+      >
       return attachClassification(rawResult, classification as Classification)
     }
 
-    const rawEndpoint: RawCall = async <S extends I>(failureMode: 'loud' | 'silent', jsonQuery?: S) => {
+    const rawEndpoint: RawCall = async <Selection extends Selectable>(failureMode: FailureMode, jsonQuery?: Selection) => {
       const { alias: aliasOption, shouldRetry, requestHeaders, url: urlOption } = readCallOptions(jsonQuery)
       const alias = aliasOption ?? queryName
       const document = stripCallOptions(jsonQuery as Record<string, unknown> | undefined)
@@ -150,7 +161,7 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
 
         logIfVerbose(logOptions, { response: result }, start)
         executeListeners(apiConfig.responseListeners, { ...listenerData, response: result })
-        return projectRootField<S>(result, alias)
+        return projectRootField<Selection>(result, alias)
       } catch (error) {
         logIfVerbose(logOptions, { error: error as Error }, start)
         executeListeners(apiConfig.responseListeners, {
@@ -162,16 +173,18 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
       }
     }
 
-    const callEndpoint = async <S extends I>(jsonQuery?: S): Promise<Projection<S, Out, E>> => {
+    const callEndpoint = async <Selection extends Selectable>(
+      jsonQuery?: Selection
+    ): Promise<Projection<Selection, JsonResult, Ignored>> => {
       const { data } = await rawEndpoint('loud', jsonQuery)
       return data
     }
 
     const endpoint = callEndpoint as typeof callEndpoint & {
-      raw: RawEndpoint<I, Out, E>
+      raw: RawEndpoint<Selectable, JsonResult, Ignored>
       memo: typeof callEndpoint
-      memoRaw: RawEndpoint<I, Out, E>
-      settle: SettleEndpoint<I, Out, E>
+      memoRaw: RawEndpoint<Selectable, JsonResult, Ignored>
+      settle: SettleEndpoint<Selectable, JsonResult, Ignored>
     }
 
     const memoizeeOptions = {
@@ -179,16 +192,19 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
       isSerialized: true,
     }
 
-    endpoint.raw = <S extends I>(jsonQuery?: S & TolerateSettledSources) => rawEndpoint<S>('silent', jsonQuery)
+    endpoint.raw = <Selection extends Selectable>(jsonQuery?: Selection & TolerateSettledSources) =>
+      rawEndpoint<Selection>('silent', jsonQuery)
     endpoint.memo = memoize(endpoint, memoizeeOptions)
 
-    endpoint.settle = async <S extends I>(jsonQuery?: S): Promise<SettledResponse<Projection<S, Out, E>>> => {
+    endpoint.settle = async <Selection extends Selectable>(
+      jsonQuery?: Selection
+    ): Promise<SettledResponse<Projection<Selection, JsonResult, Ignored>>> => {
       if (kind === 'mutation') {
         const blocking = findBlockingSource(validateSources(readCallOptions(jsonQuery).settledSources))
         if (blocking) return blockedBySource(blocking)
       }
 
-      let rawResult: ClassifiedRawResponse<Projection<S, Out, E>>
+      let rawResult: ClassifiedRawResponse<Projection<Selection, JsonResult, Ignored>>
       try {
         rawResult = await rawEndpoint('silent', jsonQuery)
       } catch (error) {
