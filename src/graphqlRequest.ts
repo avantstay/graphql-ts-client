@@ -55,7 +55,9 @@ export async function graphqlRequest({
       }
     )
 
-    let { data, errors, warnings } = responseData
+    const { data } = responseData
+    let errors = liftErrorExtensions(responseData.errors)
+    const warnings = readWarnings(responseData)
 
     if (status >= 400 && !errors?.length) {
       errors = [{ message: `Request "${queryName}" failed with status ${status}` }]
@@ -92,4 +94,30 @@ export async function graphqlRequest({
   }
 
   return lastResponse!
+}
+
+// The Arriere monolith (arriere@16aefc85) moved request warnings from the top level to
+// `extensions.warnings`, and each error's `code` and public fields to `errors[].extensions.code`
+// and `errors[].extensions.details`. These helpers restore the legacy top-level shape so existing
+// readers of `warnings` and `errors[].code` keep working against both old and new servers.
+
+// Extension warnings win whenever they are present, an empty array included.
+function readWarnings(responseData: any) {
+  return responseData.extensions?.warnings ?? responseData.warnings
+}
+
+// Fields already on the error win over lifted ones, and `extensions` stays untouched.
+function liftErrorExtensions(errors: any) {
+  if (!Array.isArray(errors)) return errors
+
+  return errors.map((error: any) =>
+    error?.extensions
+      ? Object.assign(
+          {},
+          error.extensions.details,
+          error.extensions.code != null ? { code: error.extensions.code } : {},
+          error
+        )
+      : error
+  )
 }
