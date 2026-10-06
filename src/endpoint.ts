@@ -20,6 +20,8 @@ import {
   OperationKind,
   Projection,
   RawEndpoint,
+  RequestListenerInfo,
+  RequestRetry,
   ResponseData,
   ResponseListenerInfo,
   SettleEndpoint,
@@ -134,14 +136,24 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
         variables,
       }
 
-      const listenerData = {
-        queryName: alias,
-        query: apiConfig.formatGraphQL(query),
-        variables,
-        headers: { ...requestHeaders },
+      // Request listeners prepare every attempt from the call's own headers, so a retry never resends stale ones; the
+      // first attempt is prepared here, before the client config is read. Response listeners see the last attempt.
+      const prepareAttempt = async (retry?: RequestRetry) => {
+        const info: RequestListenerInfo = {
+          queryName: alias,
+          query: apiConfig.formatGraphQL(query),
+          variables,
+          headers: { ...requestHeaders },
+          ...(retry ? { retry } : {}),
+        }
+        await Promise.all(apiConfig.requestListeners.map(listener => listener(info)))
+        return info
       }
-
-      await Promise.all(apiConfig.requestListeners.map(listener => listener(listenerData)))
+      let lastAttempt = await prepareAttempt()
+      const headersFor = async (retry?: RequestRetry) => {
+        if (retry) lastAttempt = await prepareAttempt(retry)
+        return lastAttempt.headers
+      }
 
       const clientConfig = apiConfig.getClient()
       const url = urlOption ?? clientConfig.url
@@ -153,19 +165,19 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
           kind,
           queryName: alias,
           client: { ...clientConfig, url },
-          requestHeaders: listenerData.headers,
+          headersFor,
           query,
           variables,
           errorsParser: apiConfig.errorsParser,
         })
 
         logIfVerbose(logOptions, { response: result }, start)
-        executeListeners(apiConfig.responseListeners, { ...listenerData, response: result })
+        executeListeners(apiConfig.responseListeners, { ...lastAttempt, response: result })
         return projectRootField<Selection>(result, alias)
       } catch (error) {
         logIfVerbose(logOptions, { error: error as Error }, start)
         executeListeners(apiConfig.responseListeners, {
-          ...listenerData,
+          ...lastAttempt,
           response: (error as GraphQLClientError).response,
         })
 

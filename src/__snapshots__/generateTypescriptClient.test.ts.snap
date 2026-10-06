@@ -93,7 +93,8 @@ const client = {
     retryConfig = {
       max: options.max,
       waitBeforeRetry: options.waitBeforeRetry,
-      before: options.before
+      before: options.before,
+      unauthorized: options.unauthorized
     };
   },
   setUrl: (_url) => url = _url,
@@ -168,7 +169,8 @@ const client = {
     retryConfig = {
       max: options.max,
       waitBeforeRetry: options.waitBeforeRetry,
-      before: options.before
+      before: options.before,
+      unauthorized: options.unauthorized
     };
   },
   setUrl: (_url) => url = _url,
@@ -226,6 +228,7 @@ export declare const client: {
     max: number
     waitBeforeRetry?: number
     before?: IResponseListener
+    unauthorized?: boolean
   }) => void
   queries: {
     hello: Endpoint<

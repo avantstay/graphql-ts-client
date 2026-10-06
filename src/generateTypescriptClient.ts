@@ -450,7 +450,8 @@ function emitClientJs(schema: PartitionedSchema, options: Omit<IClientOptions, '
         retryConfig = { 
           max: options.max,
           waitBeforeRetry: options.waitBeforeRetry,
-          before: options.before 
+          before: options.before,
+          unauthorized: options.unauthorized
         }
       },
       setUrl: (_url) => url = _url,
@@ -514,7 +515,7 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
       setHeader: (key: string, value: string) => void
       setHeaders: (newHeaders: { [k: string]: string }) => void,
       setUrl: (url: string) => void,
-      setRetryConfig: (options: { max: number, waitBeforeRetry?: number, before?: IResponseListener }) => void
+      setRetryConfig: (options: { max: number, waitBeforeRetry?: number, before?: IResponseListener, unauthorized?: boolean }) => void
       queries: {
         ${schema.queries.map(q => gqlEndpointToCode('query', q, 'ts')).join(',\n')}
       },
