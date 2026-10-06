@@ -1,4 +1,4 @@
-import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/dist/endpoint";
+import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/endpoint";
 import { format as formatCode } from "prettier/standalone";
 import parserGraphql from "prettier/parser-graphql";
 const formatGraphQL = (query) => formatCode(query, { parser: "graphql", plugins: [parserGraphql] });
@@ -13,13 +13,6 @@ const typesTree = {
       return {
         __args: {
           params: "BookSearchParamsAllOptional!"
-        }
-      };
-    },
-    get booksWithRequiredParams() {
-      return {
-        __args: {
-          params: "BookSearchParamsSomeRequired!"
         }
       };
     },
@@ -101,7 +94,6 @@ const myApiClient = {
   queries: {
     booksWithoutParams: apiEndpoint("query", "booksWithoutParams"),
     booksWithOptionalParams: apiEndpoint("query", "booksWithOptionalParams"),
-    booksWithRequiredParams: apiEndpoint("query", "booksWithRequiredParams"),
     failingQuery: apiEndpoint("query", "failingQuery")
   },
   mutations: {}

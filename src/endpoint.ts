@@ -20,6 +20,8 @@ import {
   OperationKind,
   Projection,
   RawEndpoint,
+  RequestListenerInfo,
+  RequestRetry,
   ResponseData,
   ResponseListenerInfo,
   SettleEndpoint,
@@ -134,14 +136,20 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
         variables,
       }
 
-      const listenerData = {
-        queryName: alias,
-        query: apiConfig.formatGraphQL(query),
-        variables,
-        headers: { ...requestHeaders },
+      // Request listeners run before every attempt, each on fresh call headers, so a retry never resends stale ones.
+      const prepareAttempt = async (retry?: RequestRetry): Promise<RequestListenerInfo> => {
+        const info: RequestListenerInfo = {
+          queryName: alias,
+          query: apiConfig.formatGraphQL(query),
+          variables,
+          headers: { ...requestHeaders },
+          ...(retry ? { retry } : {}),
+        }
+        await Promise.all(apiConfig.requestListeners.map(listener => listener(info)))
+        return info
       }
 
-      await Promise.all(apiConfig.requestListeners.map(listener => listener(listenerData)))
+      let listenerData = await prepareAttempt()
 
       const clientConfig = apiConfig.getClient()
       const url = urlOption ?? clientConfig.url
@@ -154,6 +162,10 @@ export function getApiEndpointCreator(apiConfig: ApiConfig): ApiEndpointCreator 
           queryName: alias,
           client: { ...clientConfig, url },
           requestHeaders: listenerData.headers,
+          prepareRetryHeaders: async retry => {
+            listenerData = await prepareAttempt(retry)
+            return listenerData.headers
+          },
           query,
           variables,
           errorsParser: apiConfig.errorsParser,

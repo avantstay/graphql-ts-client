@@ -24,11 +24,22 @@ export type ResponseData = {
   classification?: unknown
 }
 
+/** Why a request listener runs again for the same call: the attempt it prepares and the response that failed before it. */
+export type RequestRetry = {
+  trial: number
+  previousResponse: ResponseData
+}
+
+/**
+ * What a request listener sees before each attempt. Listeners run before every attempt, not once per call, so headers
+ * such as a short-lived bearer token are current on every retry; `retry` is set on every attempt after the first.
+ */
 export type RequestListenerInfo = {
   queryName: string
   query: string
   variables: any
   headers: { [key: string]: string }
+  retry?: RequestRetry
 }
 export type IRequestListener = (info: RequestListenerInfo) => void | Promise<void>
 
@@ -198,6 +209,12 @@ export type ClientConfig = {
     max: number
     waitBeforeRetry?: number
     before: IResponseListener
+    /**
+     * Retries an operation once more when it is rejected with HTTP 401, after the request listeners refresh its
+     * headers. The server rejected the request before running it, so this also applies to mutations, and it does not
+     * count against `max`. Off by default.
+     */
+    unauthorized?: boolean
   }
 }
 

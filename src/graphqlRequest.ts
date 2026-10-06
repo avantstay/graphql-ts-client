@@ -1,7 +1,7 @@
 import _axios, { AxiosStatic } from 'axios'
 import { classify, Classification } from './settle/classify'
 import { attachClassification } from './settle/settleRaw'
-import { ClientConfig, FailureMode, GraphQLClientError, OperationKind, ResponseData } from './types'
+import { ClientConfig, FailureMode, GraphQLClientError, OperationKind, RequestRetry, ResponseData } from './types'
 
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
 
@@ -98,11 +98,17 @@ export type GraphqlRequestOptions = {
   queryName: string
   query: string
   requestHeaders?: { [_key: string]: any }
+  /** Produces the headers for each retry, so they are as current as the first attempt's; defaults to reusing them. */
+  prepareRetryHeaders?: (retry: RequestRetry) => Promise<{ [_key: string]: any }>
   variables: { [_key: string]: any }
   errorsParser?: (errors: any[]) => any
 }
 
-/** Posts one GraphQL operation, retrying eligible queries, and returns the classified response. */
+/**
+ * Posts one GraphQL operation and returns the classified response. Eligible queries are retried up to
+ * `retryConfig.max`; with `retryConfig.unauthorized`, a 401 is retried once more for any operation. Every retry asks
+ * `prepareRetryHeaders` for its headers.
+ */
 export async function graphqlRequest({
   shouldRetry = true,
   axios = _axios,
@@ -111,26 +117,38 @@ export async function graphqlRequest({
   client,
   query,
   requestHeaders = {},
+  prepareRetryHeaders,
   variables,
   failureMode,
   errorsParser,
 }: GraphqlRequestOptions) {
   let lastResponse!: ResponseData
-  // Mutations are never retried: a mutation that returned errors has an unknown server-side outcome.
+  // Mutations are never retried on errors: a mutation that returned errors has an unknown server-side outcome.
   const maxRetrials = shouldRetry && kind === 'query' ? client.retryConfig.max : 0
+  // A 401 means the server rejected the request before running it, so one more attempt is safe for any operation.
+  let unauthorizedRetryLeft = client.retryConfig.unauthorized === true
+  let errorRetries = 0
+  let headers = requestHeaders
 
   for (let trial = 0; ; trial++) {
-    const attempt = await postOperation({ axios, client, requestHeaders, queryName, query, variables, trial })
+    const attempt = await postOperation({ axios, client, requestHeaders: headers, queryName, query, variables, trial })
     const { response, classification } = buildResponse(attempt, queryName, errorsParser)
     lastResponse = response
 
-    const retryable =
-      classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
-    if (!retryable || trial >= maxRetrials) break
-    if (typeof client.retryConfig.before === 'function') {
-      await client.retryConfig.before({ queryName, query, variables, response: lastResponse })
+    if (attempt.status === 401 && unauthorizedRetryLeft) {
+      unauthorizedRetryLeft = false
+    } else {
+      const retryable =
+        classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
+      if (!retryable || errorRetries >= maxRetrials) break
+      errorRetries++
+      if (typeof client.retryConfig.before === 'function') {
+        await client.retryConfig.before({ queryName, query, variables, response: lastResponse })
+      }
+      if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
     }
-    if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
+
+    if (prepareRetryHeaders) headers = await prepareRetryHeaders({ trial: trial + 1, previousResponse: lastResponse })
   }
 
   if (failureMode === 'loud' && lastResponse.errors?.length) {
