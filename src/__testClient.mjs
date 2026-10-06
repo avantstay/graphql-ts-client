@@ -87,7 +87,8 @@ const myApiClient = {
     retryConfig = {
       max: options.max,
       waitBeforeRetry: options.waitBeforeRetry,
-      before: options.before
+      before: options.before,
+      unauthorized: options.unauthorized
     };
   },
   setUrl: (_url) => url = _url,
