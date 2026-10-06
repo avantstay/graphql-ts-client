@@ -88,6 +88,8 @@ function buildResponse(
   return { response, classification }
 }
 
+type Headers = { [_key: string]: any }
+
 export type GraphqlRequestOptions = {
   shouldRetry?: boolean
   failureMode: FailureMode
@@ -97,17 +99,16 @@ export type GraphqlRequestOptions = {
   /** The alias used in the document and as the root key of `data`. */
   queryName: string
   query: string
-  requestHeaders?: { [_key: string]: any }
-  /** Produces the headers for each retry, so they are as current as the first attempt's; defaults to reusing them. */
-  prepareRetryHeaders?: (retry: RequestRetry) => Promise<{ [_key: string]: any }>
+  /** Produces the headers for each attempt; on a retry it receives the retry, so it can refresh credentials. */
+  headersFor?: (retry?: RequestRetry) => Promise<Headers>
   variables: { [_key: string]: any }
   errorsParser?: (errors: any[]) => any
 }
 
 /**
- * Posts one GraphQL operation and returns the classified response. Eligible queries are retried up to
- * `retryConfig.max`; with `retryConfig.unauthorized`, a 401 is retried once more for any operation. Every retry asks
- * `prepareRetryHeaders` for its headers.
+ * Posts one GraphQL operation and returns the classified response. Eligible queries are retried on errors up to
+ * `retryConfig.max`; with `retryConfig.unauthorized`, a 401 is retried once more for any operation. Every attempt,
+ * the first included, takes its headers from `headersFor`.
  */
 export async function graphqlRequest({
   shouldRetry = true,
@@ -116,43 +117,64 @@ export async function graphqlRequest({
   queryName,
   client,
   query,
-  requestHeaders = {},
-  prepareRetryHeaders,
+  headersFor = async () => ({}),
   variables,
   failureMode,
   errorsParser,
 }: GraphqlRequestOptions) {
-  let lastResponse!: ResponseData
-  // Mutations are never retried on errors: a mutation that returned errors has an unknown server-side outcome.
-  const maxRetrials = shouldRetry && kind === 'query' ? client.retryConfig.max : 0
-  // A 401 means the server rejected the request before running it, so one more attempt is safe for any operation.
-  let unauthorizedRetryLeft = client.retryConfig.unauthorized === true
-  let errorRetries = 0
-  let headers = requestHeaders
+  let response!: ResponseData
+  let retry: RequestRetry | undefined
+  let budget = initialRetryBudget(client, shouldRetry && kind === 'query')
 
   for (let trial = 0; ; trial++) {
-    const attempt = await postOperation({ axios, client, requestHeaders: headers, queryName, query, variables, trial })
-    const { response, classification } = buildResponse(attempt, queryName, errorsParser)
-    lastResponse = response
+    const requestHeaders = await headersFor(retry)
+    const attempt = await postOperation({ axios, client, requestHeaders, queryName, query, variables, trial })
+    const built = buildResponse(attempt, queryName, errorsParser)
+    response = built.response
 
-    if (attempt.status === 401 && unauthorizedRetryLeft) {
-      unauthorizedRetryLeft = false
-    } else {
-      const retryable =
-        classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
-      if (!retryable || errorRetries >= maxRetrials) break
-      errorRetries++
-      if (typeof client.retryConfig.before === 'function') {
-        await client.retryConfig.before({ queryName, query, variables, response: lastResponse })
-      }
-      if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
-    }
-
-    if (prepareRetryHeaders) headers = await prepareRetryHeaders({ trial: trial + 1, previousResponse: lastResponse })
+    const next = nextRetry(attempt.status, built.classification, budget)
+    if (!next) break
+    budget = next.budget
+    if (next.kind === 'error') await beforeErrorRetry(client, { queryName, query, variables, response })
+    retry = { trial: trial + 1, previousResponse: response }
   }
 
-  if (failureMode === 'loud' && lastResponse.errors?.length) {
-    throw new GraphQLClientError(lastResponse)
+  if (failureMode === 'loud' && response.errors?.length) {
+    throw new GraphQLClientError(response)
   }
-  return lastResponse
+  return response
+}
+
+/** The retries one operation may still make. */
+type RetryBudget = { unauthorized: boolean; errors: number }
+
+/**
+ * Mutations get no error retries: a mutation that returned errors has an unknown server-side outcome. A 401 retry is
+ * allowed for any operation, because the server rejected the request before running it.
+ */
+function initialRetryBudget(client: ClientConfig, retriesErrors: boolean): RetryBudget {
+  return { unauthorized: client.retryConfig.unauthorized === true, errors: retriesErrors ? client.retryConfig.max : 0 }
+}
+
+/** Which retry, if any, follows this attempt, and the budget left after it. */
+export function nextRetry(
+  status: number,
+  classification: Classification,
+  budget: RetryBudget
+): { kind: 'unauthorized' | 'error'; budget: RetryBudget } | undefined {
+  if (status === 401 && budget.unauthorized) {
+    return { kind: 'unauthorized', budget: { ...budget, unauthorized: false } }
+  }
+  const failedToRun =
+    classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
+  if (failedToRun && budget.errors > 0) {
+    return { kind: 'error', budget: { ...budget, errors: budget.errors - 1 } }
+  }
+  return undefined
+}
+
+/** Runs the configured `before` hook and waits, as configured, before an error retry. */
+async function beforeErrorRetry(client: ClientConfig, info: Parameters<ClientConfig['retryConfig']['before']>[0]) {
+  if (typeof client.retryConfig.before === 'function') await client.retryConfig.before(info)
+  if (client.retryConfig.waitBeforeRetry) await sleep(client.retryConfig.waitBeforeRetry)
 }

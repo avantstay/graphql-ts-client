@@ -48,7 +48,6 @@ describe('GraphQLRequest', () => {
       queryName: 'whatever',
       query: 'whatever',
       variables: {},
-      requestHeaders: {},
       client: clientWithRetries(maxRetrials, { before: () => void retryCount++ }),
     })
 

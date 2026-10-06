@@ -1,8 +1,8 @@
 import axios from 'axios'
-import { graphqlRequest, GraphqlRequestOptions } from './graphqlRequest'
+import { graphqlRequest, GraphqlRequestOptions, nextRetry } from './graphqlRequest'
 import { clientWithRetries } from './testSupport/clientConfig'
 import { createTestEndpointCreator } from './testSupport/endpointFixture'
-import { ClientConfig, RequestListenerInfo } from './types'
+import { ClientConfig, RequestListenerInfo, RequestRetry } from './types'
 
 function recordingAxios(responses: Array<{ status: number; data?: unknown }>) {
   const sentHeaders: Array<Record<string, string>> = []
@@ -32,7 +32,9 @@ const common: Pick<GraphqlRequestOptions, 'query' | 'variables' | 'failureMode'>
 describe('retrying a 401', () => {
   it('retries a 401 once with the headers prepared for the retry', async () => {
     const { axios: fake, sentHeaders } = recordingAxios([unauthorized, ok('user')])
-    const prepareRetryHeaders = jest.fn(async () => ({ Authorization: 'Bearer new' }))
+    const headersFor = jest.fn(async (retry?: RequestRetry) => ({
+      Authorization: retry ? 'Bearer new' : 'Bearer expired',
+    }))
 
     const result = await graphqlRequest({
       ...common,
@@ -40,13 +42,12 @@ describe('retrying a 401', () => {
       queryName: 'user',
       axios: fake,
       client: withUnauthorizedRetry(),
-      requestHeaders: { Authorization: 'Bearer expired' },
-      prepareRetryHeaders,
+      headersFor,
     })
 
     expect(result.status).toBe(200)
     expect(sentHeaders.map(headers => headers.Authorization)).toEqual(['Bearer expired', 'Bearer new'])
-    expect(prepareRetryHeaders).toHaveBeenCalledWith({
+    expect(headersFor).toHaveBeenLastCalledWith({
       trial: 1,
       previousResponse: expect.objectContaining({ status: 401 }),
     })
@@ -61,7 +62,7 @@ describe('retrying a 401', () => {
       queryName: 'updateUser',
       axios: fake,
       client: withUnauthorizedRetry(),
-      prepareRetryHeaders: async () => ({ Authorization: 'Bearer new' }),
+      headersFor: async () => ({ Authorization: 'Bearer new' }),
     })
 
     expect(result.status).toBe(200)
@@ -108,12 +109,36 @@ describe('retrying a 401', () => {
       queryName: 'user',
       axios: fake,
       client: withUnauthorizedRetry(1),
-      requestHeaders: { Authorization: 'Bearer 0' },
-      prepareRetryHeaders: async () => ({ Authorization: `Bearer ${++issued}` }),
+      headersFor: async retry => ({ Authorization: `Bearer ${retry ? ++issued : 0}` }),
     })
 
     expect(result.status).toBe(200)
     expect(sentHeaders.map(headers => headers.Authorization)).toEqual(['Bearer 0', 'Bearer 1', 'Bearer 2'])
+  })
+})
+
+describe('nextRetry', () => {
+  const failed = { outcome: 'failure', reason: 'http' } as any
+  const succeeded = { outcome: 'success' } as any
+
+  it('spends the 401 retry on a 401, and the error budget on other failures', () => {
+    expect(nextRetry(401, failed, { unauthorized: true, errors: 1 })).toEqual({
+      kind: 'unauthorized',
+      budget: { unauthorized: false, errors: 1 },
+    })
+    expect(nextRetry(500, failed, { unauthorized: true, errors: 1 })).toEqual({
+      kind: 'error',
+      budget: { unauthorized: true, errors: 0 },
+    })
+  })
+
+  it('treats a 401 as an ordinary failure once the 401 retry is spent', () => {
+    expect(nextRetry(401, failed, { unauthorized: false, errors: 1 })?.kind).toBe('error')
+    expect(nextRetry(401, failed, { unauthorized: false, errors: 0 })).toBeUndefined()
+  })
+
+  it('never retries a success', () => {
+    expect(nextRetry(200, succeeded, { unauthorized: true, errors: 3 })).toBeUndefined()
   })
 })
 
