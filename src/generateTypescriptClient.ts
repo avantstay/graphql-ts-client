@@ -26,7 +26,15 @@ import prettier from 'prettier'
 import pkg from '../package.json'
 import { OperationKind, TypescriptClientOutput } from './types'
 
-const tempDir = fs.realpathSync(os.tmpdir())
+/**
+ * Where generated clients are cached between runs. Defaults to the OS temp dir; set GQL_TS_CLIENT_CACHE_DIR to a
+ * directory you can persist (for example between CI jobs) so an unchanged schema is never regenerated.
+ */
+function cacheDir(): string {
+  const dir = process.env.GQL_TS_CLIENT_CACHE_DIR || os.tmpdir()
+  fs.mkdirSync(dir, { recursive: true })
+  return fs.realpathSync(dir)
+}
 
 /** Read per call, not once at import: tests and the dist smoke script set GQL_CLIENT_DIST_PATH after this module loads. */
 function clientImportPath() {
@@ -527,21 +535,41 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
     export default ${clientName}`
 }
 
-/** Stores one generated client under the temp dir so an unchanged schema regenerates from disk. */
+/**
+ * Stores one generated client in the cache dir so an unchanged schema regenerates from disk. Written to a temp name
+ * and renamed, so a reader (another CI job, a parallel generator) never sees a half-written file.
+ */
 function writeClientCache(clientCacheFilePath: string, output: TypescriptClientOutput): void {
-  fs.writeFileSync(clientCacheFilePath, JSON.stringify(output))
+  const partialPath = `${clientCacheFilePath}.${process.pid}.tmp`
+  fs.writeFileSync(partialPath, JSON.stringify(output))
+  fs.renameSync(partialPath, clientCacheFilePath)
+}
+
+/** The cached client, or undefined when there is none or the file is unreadable (treated as a miss, not an error). */
+function readClientCache(clientCacheFilePath: string): TypescriptClientOutput | undefined {
+  if (!fs.existsSync(clientCacheFilePath)) return undefined
+
+  try {
+    const output: Partial<TypescriptClientOutput> = JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
+    if (output.js && output.mjs && output.typings) return output as TypescriptClientOutput
+  } catch {
+    // Corrupt or truncated cache entry: regenerate and overwrite it.
+  }
+
+  return undefined
 }
 
 function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Omit<IClientOptions, 'output'>) {
   const typesHash = md5(`${JSON.stringify(options)}__${JSON.stringify(types)}`)
   const clientCacheFileName = `gql-ts-client__client__${typesHash}__${pkg.version}.json`
-  const clientCacheFilePath = path.resolve(tempDir, clientCacheFileName)
+  const clientCacheFilePath = path.resolve(cacheDir(), clientCacheFileName)
 
-  if (!options.skipCache && fs.existsSync(clientCacheFilePath)) {
-    const output: Partial<TypescriptClientOutput> = JSON.parse(fs.readFileSync(clientCacheFilePath, { encoding: 'utf8' }))
+  if (!options.skipCache) {
+    const cached = readClientCache(clientCacheFilePath)
 
-    if (output.js && output.mjs && output.typings) {
-      return output as TypescriptClientOutput
+    if (cached) {
+      console.log(`Restored client (${options.clientName ?? 'n/a'}) from cache: ${clientCacheFilePath}`)
+      return cached
     }
   }
 
@@ -553,17 +581,19 @@ function generateClientCode(types: ReadonlyArray<IntrospectionType>, options: Om
   const output: TypescriptClientOutput = {
     js: esbuild.transformSync(jsCode, { format: 'cjs', loader: 'js' }).code,
     mjs: esbuild.transformSync(jsCode, { format: 'esm', loader: 'js' }).code,
-    typings: prettier.format(typingsCode, { semi: false, parser: 'typescript' }),
+    // babel-ts formats identically to the typescript parser here, but skips prettier's "is this probably JSX?"
+    // regex scan of the whole text, which is quadratic on a large, quote-free .d.ts (minutes for a few MB).
+    typings: prettier.format(typingsCode, { semi: false, parser: 'babel-ts' }),
   }
 
-  writeClientCache(clientCacheFilePath, output)
+  if (!options.skipCache) writeClientCache(clientCacheFilePath, output)
 
   return output
 }
 
 async function fetchIntrospection({ endpoint, headers }: FetchIntrospectionOptions): Promise<ReadonlyArray<IntrospectionType>> {
   const introspectionCacheFileName = `gql-ts-client__introspection__${kebabCase(endpoint)}.json`
-  const introspectionCacheFilePath = path.resolve(tempDir, introspectionCacheFileName)
+  const introspectionCacheFilePath = path.resolve(cacheDir(), introspectionCacheFileName)
 
   let loadedFromCache = false
   let types: any
