@@ -1,4 +1,6 @@
 import { ApolloServer } from 'apollo-server'
+import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { generateTypescriptClient, generateTypescriptClientFromSDL } from './generateTypescriptClient'
 import { startServer } from './testServer'
@@ -211,6 +213,57 @@ describe('Generated Client', () => {
       if (previousDistPath === undefined) delete process.env.GQL_CLIENT_DIST_PATH
       else process.env.GQL_CLIENT_DIST_PATH = previousDistPath
     }
+  })
+})
+
+describe('client cache', () => {
+  const sdl = 'type Query { hello: String }'
+  const options = { endpoint: 'https://sample.endpoint.com/graphql', clientName: 'cached' }
+  let cacheDir: string
+  let previousCacheDir: string | undefined
+
+  beforeEach(() => {
+    cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gql-ts-client-cache-'))
+    previousCacheDir = process.env.GQL_TS_CLIENT_CACHE_DIR
+    process.env.GQL_TS_CLIENT_CACHE_DIR = cacheDir
+  })
+
+  afterEach(() => {
+    if (previousCacheDir === undefined) delete process.env.GQL_TS_CLIENT_CACHE_DIR
+    else process.env.GQL_TS_CLIENT_CACHE_DIR = previousCacheDir
+    fs.rmSync(cacheDir, { recursive: true, force: true })
+  })
+
+  const cacheEntries = () => fs.readdirSync(cacheDir).filter(name => name.startsWith('gql-ts-client__client__'))
+
+  it('writes the generated client to GQL_TS_CLIENT_CACHE_DIR and restores it on the next run', () => {
+    const generated = generateTypescriptClientFromSDL(sdl, options)
+    expect(cacheEntries()).toHaveLength(1)
+    expect(cacheEntries()[0]).toMatch(/\.json$/)
+
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(generateTypescriptClientFromSDL(sdl, options)).toEqual(generated)
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Restored client (cached) from cache'))
+    } finally {
+      log.mockRestore()
+    }
+    expect(cacheEntries()).toHaveLength(1)
+  })
+
+  it('regenerates over a truncated cache entry instead of failing', () => {
+    const generated = generateTypescriptClientFromSDL(sdl, options)
+    const entry = path.join(cacheDir, cacheEntries()[0])
+    fs.writeFileSync(entry, '{"js":"partial')
+
+    expect(generateTypescriptClientFromSDL(sdl, options)).toEqual(generated)
+    expect(JSON.parse(fs.readFileSync(entry, 'utf8'))).toEqual(generated)
+    expect(fs.readdirSync(cacheDir).filter(name => name.endsWith('.tmp'))).toHaveLength(0)
+  })
+
+  it('skips the cache entirely with skipCache', () => {
+    generateTypescriptClientFromSDL(sdl, { ...options, skipCache: true })
+    expect(cacheEntries()).toHaveLength(0)
   })
 })
 

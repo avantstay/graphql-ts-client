@@ -31,6 +31,13 @@ generateTypescriptClient({
 })
 ```
 
+### Generation cache
+
+Each generated client is cached on disk, keyed by the schema and the generation options, so an unchanged schema is restored
+instead of regenerated. The cache lives in the OS temp dir by default. Set `GQL_TS_CLIENT_CACHE_DIR` to a directory you persist
+between runs (for example a CI cache path) to keep the hits across machines or jobs; pass `skipCache: true` to ignore it for one
+call.
+
 ### Using the generated client
 
 ```typescript
