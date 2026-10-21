@@ -281,6 +281,34 @@ describe('a subscription endpoint', () => {
       expect(error).not.toHaveBeenCalled()
     })
 
+    it('tells the observer the stream is open before the first event', async () => {
+      server.respondWith(() => ({ headers: { 'content-type': sse.contentType }, chunks: [sse.next(note('1')), sse.complete] }))
+      const calls: string[] = []
+
+      await new Promise<void>(complete => {
+        createEndpoint()({ __args: { bookingId: 'b1' }, id: true }).subscribe({
+          open: () => calls.push('open'),
+          next: value => calls.push(`next:${value.id}`),
+          complete,
+        })
+      })
+
+      expect(calls).toEqual(['open', 'next:1'])
+    })
+
+    it('does not report open when the server refuses the subscription', async () => {
+      server.respondWith(() => ({ status: 403, chunks: [JSON.stringify({ errors: [{ message: 'forbidden' }] })] }))
+      const open = jest.fn()
+
+      await new Promise<void>(complete => {
+        createEndpoint()
+          .settle({ __args: { bookingId: 'b1' }, id: true })
+          .subscribe({ open, complete })
+      })
+
+      expect(open).not.toHaveBeenCalled()
+    })
+
     it('reports a failing event through error and stops', async () => {
       server.respondWith(() => ({
         headers: { 'content-type': sse.contentType },

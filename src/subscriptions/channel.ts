@@ -2,6 +2,8 @@ import { Subscription, SubscriptionObserver } from '../types'
 
 /** What a source pushes into a subscription: values, then either an error or completion, after which pushes are ignored. */
 export type Sink<Value> = {
+  /** The source is connected and streaming; observers hear of it once. */
+  open(): void
   next(value: Value): void
   error(error: unknown): void
   complete(): void
@@ -22,6 +24,7 @@ export function createSubscription<Value>(start: (sink: Sink<Value>) => () => vo
   let iterating = false
   let terminal: Terminal | undefined
   let errorDelivered = false
+  let opened = false
   let teardown: (() => void) | undefined
   const queue: Value[] = []
   const pulls: Pull<Value>[] = []
@@ -55,6 +58,11 @@ export function createSubscription<Value>(start: (sink: Sink<Value>) => () => vo
   }
 
   const sink: Sink<Value> = {
+    open() {
+      if (closed || opened) return
+      opened = true
+      observers.slice().forEach(observer => observer.open?.())
+    },
     next(value) {
       if (closed) return
       if (iterating) queue.push(value)
@@ -122,6 +130,7 @@ export function createSubscription<Value>(start: (sink: Sink<Value>) => () => vo
         return () => undefined
       }
       observers.push(observer)
+      if (opened) observer.open?.()
       ensureStarted()
       return () => {
         const index = observers.indexOf(observer)
