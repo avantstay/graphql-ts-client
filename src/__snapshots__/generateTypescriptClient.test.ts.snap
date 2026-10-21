@@ -101,7 +101,8 @@ const client = {
   queries: {
     hello: apiEndpoint("query", "hello")
   },
-  mutations: {}
+  mutations: {},
+  subscriptions: {}
 };
 var stdin_default = client;
 ",
@@ -177,7 +178,8 @@ const client = {
   queries: {
     hello: apiEndpoint("query", "hello")
   },
-  mutations: {}
+  mutations: {},
+  subscriptions: {}
 };
 var stdin_default = client;
 export {
@@ -191,6 +193,7 @@ import {
   IResponseListener,
   Endpoint,
   MutationEndpoint,
+  SubscriptionEndpoint,
   MutationSources,
 } from "@avantstay/graphql-ts-client"
 
@@ -243,6 +246,7 @@ export declare const client: {
     >
   }
   mutations: {}
+  subscriptions: {}
 }
 
 export default client

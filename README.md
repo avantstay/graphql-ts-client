@@ -8,6 +8,9 @@ Generate fully typed Typescript clients for your GraphQL APIs.
 >
 > One behaviour changed: retries now only fire on queries that came back with nothing usable ([Retries](#retries)).
 
+> **New in v14.** Generated clients now expose `subscriptions`, streamed over HTTP with `fetch`, and iterated with `for await` or
+> an observer. See [Subscriptions](#subscriptions).
+
 ## Install
 
 ```
@@ -311,8 +314,8 @@ Narrowing on `outcome` is for TypeScript; the protection against sending incompl
 
 **Watch for typos in `__` options.** Every top-level key that starts with `__` is treated as a call option and is not sent to the
 server. A misspelled one is dropped without an error: `__retyr: false` does nothing, and TypeScript does not flag it either. The
-options that exist are `__args`, `__alias`, `__headers`, `__url`, `__retry` and `__settledSources`; `__typename` is the one `__`
-key that is a real field.
+options that exist are `__args`, `__alias`, `__headers`, `__url`, `__retry`, `__settledSources` and, on subscriptions, `__signal`;
+`__typename` is the one `__` key that is a real field.
 
 ## Writing with `settle()`
 
@@ -536,6 +539,76 @@ For the `raw()` example above, the listener receives:
 Note the shape of `response.data` in the listener: `{ article: { ... } }`, the whole server payload. `raw()` and `settle()` give
 you the inner value, `{ title, views, author }`, directly.
 
+## Subscriptions
+
+A schema with a `Subscription` type gets a `subscriptions` group next to `queries` and `mutations`. A subscription takes the same
+call object as a query, and returns a `Subscription` you iterate instead of a promise:
+
+```typescript
+const notes = myAwesomeApi.subscriptions.articleCommentAdded({
+  __args: { articleId: 'article_1' },
+  id: true,
+  body: true,
+  author: { name: true },
+})
+
+for await (const comment of notes) {
+  render(comment) // { id, body, author: { name } }, typed from the selection
+}
+// the loop ends when the server completes the subscription
+```
+
+The request is made on the first pull, not when the endpoint is called. Breaking out of the loop closes the connection; so does
+`notes.close()`, or aborting an `AbortSignal` passed as `__signal`:
+
+```typescript
+const controller = new AbortController()
+const notes = myAwesomeApi.subscriptions.articleCommentAdded({ __signal: controller.signal, __args: { articleId }, id: true })
+
+controller.abort() // closes the connection; a loop over `notes` ends, an observer is not called again
+```
+
+Outside an `async` function, attach an observer instead. `subscribe()` opens the connection and returns the function that detaches
+the observer; when the last observer detaches and nothing is iterating, the connection closes:
+
+```typescript
+const unsubscribe = notes.subscribe({
+  next: comment => render(comment),
+  error: error => showError(error), // a GraphQLClientError for an event with errors, or the transport failure
+  complete: () => showClosed(), // the server ended the subscription
+})
+```
+
+### How events are reported
+
+Every event the server pushes is a whole GraphQL response, and is classified exactly like a query's response. The three calls
+mirror the query ones, per event:
+
+| Call                                         | Yields                                        | On an event with errors                                                            | On a transport failure                                                  |
+| -------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `myAwesomeApi.subscriptions.x(...)` (direct) | the event's data                              | Throws `GraphQLClientError` from the loop (or calls `error`) and closes.           | Throws the error (or calls `error`) and closes.                         |
+| `raw()`                                      | a [`raw()` result](#raw-result) per event     | Yields it with its `outcome`, and keeps going.                                     | Throws the error (or calls `error`) and closes.                         |
+| `settle()`                                   | a [settled result](#settled-result) per event | Yields it with `outcome: 'partial'` or `'failure'`, and keeps going. Never throws. | Yields one `outcome: 'failure', reason: 'http'` result, then completes. |
+
+A subscription the server refuses outright (an unknown field, missing privileges) answers with the same 4xx JSON response a bad
+query gets. The direct call throws `GraphQLClientError` with that response; `raw()` and `settle()` yield one `'failure'` result
+with `reason: 'http'` and its `status`, then complete.
+
+Request listeners run once, before connecting, so a short-lived token set in one is current when the subscription opens. With
+`setRetryConfig({ unauthorized: true })`, a 401 reconnects once after the listeners refresh the headers. Response listeners are
+called once per event. Error retries never apply to a subscription, and `__retry` is not a subscription option.
+
+### Transport
+
+The subscription is a `POST` to the client URL with the same JSON body a query sends, and an `Accept` header naming both stream
+protocols the AvantStay backend speaks: GraphQL over Server-Sent Events (`text/event-stream`) and Apollo's multipart protocol
+(`multipart/mixed;subscriptionSpec="1.0"`), which is what Apollo Router uses towards browsers. The server picks one and the client
+reads whichever came back, so nothing is configured on the client. Heartbeats are skipped.
+
+Streaming needs a global `fetch` whose responses expose a readable body: every current browser and Node 18+. There is no
+reconnection on a dropped connection; the subscription ends with an error (or a `'failure'` result from `settle()`), and the
+caller decides whether to open a new one.
+
 ## Reference
 
 ### Call options
@@ -551,6 +624,7 @@ They configure the request and are never sent to the server. Any other top-level
 | `__url`            | `string`                               | no                                   | all calls                    | Overrides the client URL for this request only.                                                                                                                                                                                                                                                                                                                   |
 | `__retry`          | `boolean` (default `true`)             | no                                   | all calls                    | `false` opts this request out of the retry policy set by `setRetryConfig`.                                                                                                                                                                                                                                                                                        |
 | `__settledSources` | `SettledResponse<unknown>[] \| 'none'` | **yes, on `settle()` of a mutation** | `settle()` on mutations only | `__settledSources` lists the sources of the payload: the settled results it was built from, or `'none'` when the mutation was not built from any earlier query. Ignored by a mutation's direct call, `memo()` and `raw()`; a query's `raw()` tolerates it, a query's direct call does not. See [What `__settledSources` expects](#what-__settledsources-expects). |
+| `__signal`         | `AbortSignal`                          | no                                   | subscriptions only           | Closes the subscription when aborted. See [Subscriptions](#subscriptions).                                                                                                                                                                                                                                                                                        |
 | `__typename`       | `true`                                 | no                                   | all calls                    | The GraphQL meta-field. It is the one `__` key that is a field, not an option.                                                                                                                                                                                                                                                                                    |
 
 Rules for `__settledSources`:
@@ -599,10 +673,21 @@ The v12 shape plus `outcome`, `failedPaths` and, on a failure, `reason`. `data` 
 | Class                 | Thrown by                                 | When                                                                     |
 | --------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
 | `GraphQLClientError`  | direct calls and `memo()`                 | The response carried any error. `error.response` is the full raw result. |
+| `GraphQLClientError`  | a subscription's direct call              | An event carried errors, or the server refused the subscription.         |
 | `MissingSourcesError` | `settle()` on a mutation (as a rejection) | `__settledSources` is missing or invalid. See the rules above.           |
 
 Both work with `instanceof` even when the generated client and your code load different copies of this package. `settle()` never
 throws for any other reason: transport failures become `outcome: 'failure', reason: 'http'`.
+
+### Subscription handle
+
+What a subscription endpoint returns, from the direct call, `raw()` and `settle()` alike. `Subscription<Value>` is:
+
+| Member                   | Signature                                                                                                              | Meaning                                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `[Symbol.asyncIterator]` | `AsyncIterable<Value>`                                                                                                 | Iterate with `for await`. The connection opens on the first pull and closes when the loop ends, however it ends.       |
+| `subscribe(observer)`    | `(observer: { next?: (value: Value) => void; error?: (error: unknown) => void; complete?: () => void }) => () => void` | Opens the connection if needed and delivers every event to `observer`. The returned function detaches it.              |
+| `close()`                | `() => void`                                                                                                           | Closes the connection. Loops end, observers are not called again, and nothing is reported as an error or a completion. |
 
 ### Helpers
 

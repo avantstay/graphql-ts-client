@@ -4,6 +4,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { generateTypescriptClient, generateTypescriptClientFromSDL } from './generateTypescriptClient'
 import { startServer } from './testServer'
+import { sse, startSubscriptionServer } from './testSupport/subscriptionServer'
 import { RequestListenerInfo, ResponseListenerInfo } from './types'
 
 let testServer: { server: ApolloServer; url: string }
@@ -289,7 +290,67 @@ describe('v13 generator output', () => {
     expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
     expect(output.typings).toMatch(/user: Endpoint</)
     expect(output.typings).toMatch(
-      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*MutationSources,?\s*}\s*from/
+      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*SubscriptionEndpoint,\s*MutationSources,?\s*}\s*from/
     )
+  })
+
+  it('emits an empty subscriptions group when the schema has no Subscription type', () => {
+    expect(output.typings).toMatch(/subscriptions: {\s*}/)
+    expect(output.js).toMatch(/subscriptions: {\s*}/)
+  })
+})
+
+describe('subscriptions generator output', () => {
+  const sdl = `
+    type Query { user(id: ID!): User! }
+    type Subscription { userUpdated(id: ID!): User!, tick: Int }
+    type User { id: ID!, name: String }
+  `
+  const output = generateTypescriptClientFromSDL(sdl, {
+    endpoint: 'https://sample.endpoint.com/graphql',
+    clientName: 'sample',
+    skipCache: true,
+  })
+
+  it('declares one SubscriptionEndpoint per subscription field, with __signal and without __retry', () => {
+    expect(output.typings).toMatch(/userUpdated: SubscriptionEndpoint</)
+    expect(output.typings).toMatch(/tick: SubscriptionEndpoint</)
+    const userUpdatedInput = /userUpdated: SubscriptionEndpoint<([\s\S]*?)& UserSelection/.exec(output.typings)?.[1] ?? ''
+    expect(userUpdatedInput).toMatch(/__signal\?: AbortSignal[\s\S]*__args: UserUpdatedArgs/)
+    expect(userUpdatedInput).not.toContain('__retry')
+    expect(output.typings).toMatch(/export interface UserUpdatedArgs/)
+  })
+
+  it('wires each subscription field to a subscription endpoint and the Subscription root into the types tree', () => {
+    expect(output.js).toContain('userUpdated: apiEndpoint("subscription", "userUpdated")')
+    expect(output.js).toMatch(/Subscription: {[\s\S]*userUpdated[\s\S]*__args: {\s*id: "ID!"/)
+  })
+
+  it('streams events through the generated client, from a server speaking the backend protocol', async () => {
+    const server = await startSubscriptionServer()
+    try {
+      server.respondWith(() => ({
+        headers: { 'content-type': sse.contentType },
+        chunks: [sse.next({ data: { userUpdated: { id: 'u1', name: 'Ada' } } }), sse.heartbeat, sse.complete],
+      }))
+      // Loaded with its own `exports`, so the CJS bundle does not redefine the ones the eval in beforeAll filled.
+      const load = new Function('require', 'exports', `${output.js};return sample`)
+      const generated = load(require, {})
+      generated.setUrl(server.url)
+
+      const seen: unknown[] = []
+      for await (const user of generated.subscriptions.userUpdated({ __args: { id: 'u1' }, id: true, name: true })) {
+        seen.push(user)
+      }
+
+      expect(seen).toEqual([{ id: 'u1', name: 'Ada' }])
+      expect(server.requests[0].body).toEqual({
+        query: 'subscription userUpdated($id: ID!) { userUpdated(id:$id) { id name } }',
+        variables: { id: 'u1' },
+        operationName: 'userUpdated',
+      })
+    } finally {
+      await server.stop()
+    }
   })
 })

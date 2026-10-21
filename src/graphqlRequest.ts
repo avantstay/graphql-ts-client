@@ -6,7 +6,7 @@ import { ClientConfig, FailureMode, GraphQLClientError, OperationKind, RequestRe
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
 
 /** The GraphQL envelope a server returns; every field is optional because an error response may carry none of them. */
-type GraphQLBody = {
+export type GraphQLBody = {
   data?: any
   errors?: any[]
   warnings?: any
@@ -50,7 +50,7 @@ async function postOperation({
 }
 
 /** Classifies one attempt's payload and assembles the response the endpoint layer reads. */
-function buildResponse(
+export function buildResponse(
   attempt: { responseData: GraphQLBody; headers: any; status: number },
   queryName: string,
   errorsParser?: (errors: any[]) => any
