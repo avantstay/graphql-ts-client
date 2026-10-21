@@ -8,8 +8,8 @@ Generate fully typed Typescript clients for your GraphQL APIs.
 >
 > One behaviour changed: retries now only fire on queries that came back with nothing usable ([Retries](#retries)).
 
-> **New in v14.** Generated clients now expose `subscriptions`, streamed over HTTP with `fetch`, and iterated with `for await`
-> or an observer. See [Subscriptions](#subscriptions).
+> **New in v14.** Generated clients now expose `subscriptions`, streamed over HTTP with `fetch`, and iterated with `for await` or
+> an observer. See [Subscriptions](#subscriptions).
 
 ## Install
 
