@@ -83,6 +83,21 @@ describe('a subscription endpoint', () => {
     ])
   })
 
+  it('delivers a multipart event before the next delimiter arrives', async () => {
+    server.respondWith(() => ({
+      headers: { 'content-type': 'multipart/mixed;boundary="graphql";subscriptionSpec=1.0' },
+      chunks: [`--graphql\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ payload: note('1') })}\r\n`],
+      hang: true,
+    }))
+    const notes = createEndpoint()({ __args: { bookingId: 'b1' }, id: true, body: true })
+
+    const first = await notes[Symbol.asyncIterator]().next()
+
+    expect(first).toEqual({ value: { id: '1', body: 'note 1' }, done: false })
+    notes.close()
+    await server.waitForClientClose()
+  })
+
   it('unwraps the root field by its alias', async () => {
     server.respondWith(() => ({ headers: { 'content-type': sse.contentType }, chunks: [sse.next(aliased('1')), sse.complete] }))
 
