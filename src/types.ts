@@ -171,6 +171,8 @@ export type MutationEndpoint<Selectable, Result, Ignored> = EndpointBase<Selecta
 
 /** Callbacks for `Subscription.subscribe()`; every one is optional. */
 export type SubscriptionObserver<Value> = {
+  /** The server accepted the subscription and its stream is being read; called at most once, before any `next`. */
+  open?: () => void
   next?: (value: Value) => void
   error?: (error: unknown) => void
   complete?: () => void

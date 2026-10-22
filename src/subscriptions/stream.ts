@@ -53,6 +53,8 @@ export async function openSubscription(options: {
 }
 
 export type FrameSink = {
+  /** The response is a stream this client reads, and reading has begun. */
+  open(): void
   next(body: StreamBody): void
   error(error: unknown): void
   complete(): void
@@ -77,6 +79,7 @@ export async function readSubscription(response: SubscriptionResponse, signal: A
   const decoder = new TextDecoder()
   const reader = response.body.getReader()
   let finished = false
+  sink.open()
 
   const deliver = (frames: ReturnType<typeof parser.push>): boolean => {
     for (const frame of frames) {

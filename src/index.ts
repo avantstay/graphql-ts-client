@@ -2,3 +2,5 @@ export { generateTypescriptClient, generateTypescriptClientFromSDL } from './gen
 
 export * from './types'
 export * from './settle'
+export { resubscribe } from './subscriptions/resubscribe'
+export type { ConnectionState, ConnectionStateChange, ResubscribeOptions } from './subscriptions/resubscribe'

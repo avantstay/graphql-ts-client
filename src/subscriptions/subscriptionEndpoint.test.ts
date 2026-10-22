@@ -83,6 +83,21 @@ describe('a subscription endpoint', () => {
     ])
   })
 
+  it('delivers a multipart event before the next delimiter arrives', async () => {
+    server.respondWith(() => ({
+      headers: { 'content-type': 'multipart/mixed;boundary="graphql";subscriptionSpec=1.0' },
+      chunks: [`--graphql\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ payload: note('1') })}\r\n`],
+      hang: true,
+    }))
+    const notes = createEndpoint()({ __args: { bookingId: 'b1' }, id: true, body: true })
+
+    const first = await notes[Symbol.asyncIterator]().next()
+
+    expect(first).toEqual({ value: { id: '1', body: 'note 1' }, done: false })
+    notes.close()
+    await server.waitForClientClose()
+  })
+
   it('unwraps the root field by its alias', async () => {
     server.respondWith(() => ({ headers: { 'content-type': sse.contentType }, chunks: [sse.next(aliased('1')), sse.complete] }))
 
@@ -279,6 +294,34 @@ describe('a subscription endpoint', () => {
 
       expect(next.mock.calls).toEqual([[{ id: '1', body: 'note 1' }], [{ id: '2', body: 'note 2' }]])
       expect(error).not.toHaveBeenCalled()
+    })
+
+    it('tells the observer the stream is open before the first event', async () => {
+      server.respondWith(() => ({ headers: { 'content-type': sse.contentType }, chunks: [sse.next(note('1')), sse.complete] }))
+      const calls: string[] = []
+
+      await new Promise<void>(complete => {
+        createEndpoint()({ __args: { bookingId: 'b1' }, id: true }).subscribe({
+          open: () => calls.push('open'),
+          next: value => calls.push(`next:${value.id}`),
+          complete,
+        })
+      })
+
+      expect(calls).toEqual(['open', 'next:1'])
+    })
+
+    it('does not report open when the server refuses the subscription', async () => {
+      server.respondWith(() => ({ status: 403, chunks: [JSON.stringify({ errors: [{ message: 'forbidden' }] })] }))
+      const open = jest.fn()
+
+      await new Promise<void>(complete => {
+        createEndpoint()
+          .settle({ __args: { bookingId: 'b1' }, id: true })
+          .subscribe({ open, complete })
+      })
+
+      expect(open).not.toHaveBeenCalled()
     })
 
     it('reports a failing event through error and stops', async () => {
