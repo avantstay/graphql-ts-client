@@ -27,161 +27,169 @@ var __toModule = (module2) => {
 };
 __export(exports, {
   client: () => client,
+  createClient: () => createClient,
   default: () => stdin_default
 });
 var import_endpoint = __toModule(require("@avantstay/graphql-ts-client/endpoint"));
 const formatGraphQL = (query) => query;
 const typesTree = {};
-let verbose = false;
-let headers = {};
-let url = "https://sample.endpoint.com/graphl";
-let retryConfig = {
-  max: 0,
-  before: void 0,
-  waitBeforeRetry: 0
-};
-let requestListeners = [];
-let responseListeners = [];
-let errorsParser = void 0;
-let apiEndpoint = (0, import_endpoint.getApiEndpointCreator)({
-  getClient: () => ({ url, headers, retryConfig }),
-  requestListeners,
-  responseListeners,
-  maxAge: 3e4,
-  verbose,
-  typesTree,
-  formatGraphQL,
-  errorsParser
-});
-const client = {
-  addRequestListener: (listener) => {
-    requestListeners.push(listener);
-    return () => {
+function createClient({ transport } = {}) {
+  let verbose = false;
+  let headers = {};
+  let url = "https://sample.endpoint.com/graphl";
+  let retryConfig = {
+    max: 0,
+    before: void 0,
+    waitBeforeRetry: 0
+  };
+  let requestListeners = [];
+  let responseListeners = [];
+  let errorsParser = void 0;
+  let apiEndpoint = (0, import_endpoint.getApiEndpointCreator)({
+    getClient: () => ({ url, headers, retryConfig, transport }),
+    requestListeners,
+    responseListeners,
+    maxAge: 3e4,
+    verbose,
+    typesTree,
+    formatGraphQL,
+    errorsParser
+  });
+  return {
+    addRequestListener: (listener) => {
+      requestListeners.push(listener);
+      return () => {
+        const index = requestListeners.indexOf(listener);
+        if (index > -1)
+          requestListeners.splice(index, 1);
+      };
+    },
+    removeRequestListener: (listener) => {
       const index = requestListeners.indexOf(listener);
       if (index > -1)
         requestListeners.splice(index, 1);
-    };
-  },
-  removeRequestListener: (listener) => {
-    const index = requestListeners.indexOf(listener);
-    if (index > -1)
-      requestListeners.splice(index, 1);
-  },
-  addResponseListener: (listener) => {
-    responseListeners.push(listener);
-    return () => {
+    },
+    addResponseListener: (listener) => {
+      responseListeners.push(listener);
+      return () => {
+        const index = responseListeners.indexOf(listener);
+        if (index > -1)
+          responseListeners.splice(index, 1);
+      };
+    },
+    removeResponseListener: (listener) => {
       const index = responseListeners.indexOf(listener);
       if (index > -1)
         responseListeners.splice(index, 1);
-    };
-  },
-  removeResponseListener: (listener) => {
-    const index = responseListeners.indexOf(listener);
-    if (index > -1)
-      responseListeners.splice(index, 1);
-  },
-  setHeader: (key, value) => {
-    headers[key] = value;
-  },
-  setHeaders: (newHeaders) => {
-    headers = newHeaders;
-  },
-  setRetryConfig: (options) => {
-    if (!Number.isInteger(options.max) || options.max < 0) {
-      throw new Error("retryOptions.max should be a non-negative integer");
-    }
-    retryConfig = {
-      max: options.max,
-      waitBeforeRetry: options.waitBeforeRetry,
-      before: options.before,
-      unauthorized: options.unauthorized
-    };
-  },
-  setUrl: (_url) => url = _url,
-  queries: {
-    hello: apiEndpoint("query", "hello")
-  },
-  mutations: {}
-};
+    },
+    setHeader: (key, value) => {
+      headers[key] = value;
+    },
+    setHeaders: (newHeaders) => {
+      headers = { ...newHeaders };
+    },
+    setRetryConfig: (options) => {
+      if (!Number.isInteger(options.max) || options.max < 0) {
+        throw new Error("retryOptions.max should be a non-negative integer");
+      }
+      retryConfig = {
+        max: options.max,
+        waitBeforeRetry: options.waitBeforeRetry,
+        before: options.before,
+        unauthorized: options.unauthorized
+      };
+    },
+    setUrl: (_url) => url = _url,
+    queries: {
+      hello: apiEndpoint("query", "hello")
+    },
+    mutations: {}
+  };
+}
+const client = createClient();
 var stdin_default = client;
 ",
   "mjs": "import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/endpoint";
 const formatGraphQL = (query) => query;
 const typesTree = {};
-let verbose = false;
-let headers = {};
-let url = "https://sample.endpoint.com/graphl";
-let retryConfig = {
-  max: 0,
-  before: void 0,
-  waitBeforeRetry: 0
-};
-let requestListeners = [];
-let responseListeners = [];
-let errorsParser = void 0;
-let apiEndpoint = getApiEndpointCreator({
-  getClient: () => ({ url, headers, retryConfig }),
-  requestListeners,
-  responseListeners,
-  maxAge: 3e4,
-  verbose,
-  typesTree,
-  formatGraphQL,
-  errorsParser
-});
-const client = {
-  addRequestListener: (listener) => {
-    requestListeners.push(listener);
-    return () => {
+function createClient({ transport } = {}) {
+  let verbose = false;
+  let headers = {};
+  let url = "https://sample.endpoint.com/graphl";
+  let retryConfig = {
+    max: 0,
+    before: void 0,
+    waitBeforeRetry: 0
+  };
+  let requestListeners = [];
+  let responseListeners = [];
+  let errorsParser = void 0;
+  let apiEndpoint = getApiEndpointCreator({
+    getClient: () => ({ url, headers, retryConfig, transport }),
+    requestListeners,
+    responseListeners,
+    maxAge: 3e4,
+    verbose,
+    typesTree,
+    formatGraphQL,
+    errorsParser
+  });
+  return {
+    addRequestListener: (listener) => {
+      requestListeners.push(listener);
+      return () => {
+        const index = requestListeners.indexOf(listener);
+        if (index > -1)
+          requestListeners.splice(index, 1);
+      };
+    },
+    removeRequestListener: (listener) => {
       const index = requestListeners.indexOf(listener);
       if (index > -1)
         requestListeners.splice(index, 1);
-    };
-  },
-  removeRequestListener: (listener) => {
-    const index = requestListeners.indexOf(listener);
-    if (index > -1)
-      requestListeners.splice(index, 1);
-  },
-  addResponseListener: (listener) => {
-    responseListeners.push(listener);
-    return () => {
+    },
+    addResponseListener: (listener) => {
+      responseListeners.push(listener);
+      return () => {
+        const index = responseListeners.indexOf(listener);
+        if (index > -1)
+          responseListeners.splice(index, 1);
+      };
+    },
+    removeResponseListener: (listener) => {
       const index = responseListeners.indexOf(listener);
       if (index > -1)
         responseListeners.splice(index, 1);
-    };
-  },
-  removeResponseListener: (listener) => {
-    const index = responseListeners.indexOf(listener);
-    if (index > -1)
-      responseListeners.splice(index, 1);
-  },
-  setHeader: (key, value) => {
-    headers[key] = value;
-  },
-  setHeaders: (newHeaders) => {
-    headers = newHeaders;
-  },
-  setRetryConfig: (options) => {
-    if (!Number.isInteger(options.max) || options.max < 0) {
-      throw new Error("retryOptions.max should be a non-negative integer");
-    }
-    retryConfig = {
-      max: options.max,
-      waitBeforeRetry: options.waitBeforeRetry,
-      before: options.before,
-      unauthorized: options.unauthorized
-    };
-  },
-  setUrl: (_url) => url = _url,
-  queries: {
-    hello: apiEndpoint("query", "hello")
-  },
-  mutations: {}
-};
+    },
+    setHeader: (key, value) => {
+      headers[key] = value;
+    },
+    setHeaders: (newHeaders) => {
+      headers = { ...newHeaders };
+    },
+    setRetryConfig: (options) => {
+      if (!Number.isInteger(options.max) || options.max < 0) {
+        throw new Error("retryOptions.max should be a non-negative integer");
+      }
+      retryConfig = {
+        max: options.max,
+        waitBeforeRetry: options.waitBeforeRetry,
+        before: options.before,
+        unauthorized: options.unauthorized
+      };
+    },
+    setUrl: (_url) => url = _url,
+    queries: {
+      hello: apiEndpoint("query", "hello")
+    },
+    mutations: {}
+  };
+}
+const client = createClient();
 var stdin_default = client;
 export {
   client,
+  createClient,
   stdin_default as default
 };
 ",
@@ -192,6 +200,7 @@ import {
   Endpoint,
   MutationEndpoint,
   MutationSources,
+  GeneratedClientOptions,
 } from "@avantstay/graphql-ts-client"
 
 // Scalars
@@ -215,6 +224,10 @@ export interface Query {
 }
 
 // Selection Types
+
+export declare function createClient(
+  options?: GeneratedClientOptions
+): typeof client
 
 export declare const client: {
   addRequestListener: (listener: IRequestListener) => () => void
