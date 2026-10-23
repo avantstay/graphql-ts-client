@@ -110,12 +110,12 @@ client.setHeader('X-Client', 'example')
 const response = await client.queries.article.raw({ __retry: false, title: true })
 ```
 
-The callback runs after the existing serializer and request listeners, with merged content-type, client and call headers. It
-returns `{ status, headers, data }`, where `data` is the GraphQL envelope, including any `data`, `errors`, `warnings` and
-`extensions.warnings`. Resolve HTTP errors with their status and envelope so normal classification and response listeners still
-apply. Reject for transport failures, which reject direct and `raw()` calls and become HTTP failures in `settle()`. The transport
-owns network I/O, cancellation, limits, redirects and any transport-level retries. The client does not add these policies to a
-custom transport.
+The callback runs after the existing serializer and request listeners, with merged content-type, client and call headers. Treat
+request values as input; copy before transforming them. It returns `{ status, headers, data }`, where `data` is the GraphQL
+envelope, including any `data`, `errors`, `warnings` and `extensions.warnings`. Resolve HTTP errors with their status and envelope
+so normal classification and response listeners still apply. Reject for transport failures, which reject direct and `raw()` calls
+and become HTTP failures in `settle()`. The transport owns network I/O, cancellation, limits, redirects and any transport-level
+retries. The client does not add these policies to a custom transport.
 
 `__retry: false` disables all package retries, including an enabled 401 retry. `raw()` always executes and bypasses memo caches.
 Use both for one callback invocation per call. `memo()` and `memoRaw()` still cache within their own client instance; calling the

@@ -209,7 +209,17 @@ async function packedGeneratedClients() {
         const url: string = request.url
         const header: string = request.headers['X-Client']
         const retry: number | undefined = request.params._retrial
-        void [query, url, header, retry]
+        const serialized: string = JSON.stringify(request.body)
+        const id = request.body.variables.id
+        // @ts-expect-error opaque variable values must be narrowed before string operations
+        id.toUpperCase()
+        if (typeof id === 'string') {
+          const upper: string = id.toUpperCase()
+          void upper
+        }
+        // @ts-expect-error serialized variables are transport input, not writable adapter state
+        request.body.variables.id = 'changed'
+        void [query, url, header, retry, serialized]
         return { status: 200, headers: {}, data: { data: { a: 'typed' } } }
       }
       const options: GeneratedClientOptions = { transport }

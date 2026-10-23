@@ -205,7 +205,7 @@ export type OperationTransportRequest = {
   url: string
   body: {
     query: string
-    variables: Record<string, any>
+    variables: Readonly<Record<string, unknown>>
     operationName: string
   }
   headers: Record<string, string>
