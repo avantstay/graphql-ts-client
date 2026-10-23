@@ -8,6 +8,7 @@ export async function checkPackedHttp(cjs, esm) {
   const pending = []
   const responded = []
   const sockets = new Set()
+  const detach = []
   const server = createServer((req, res) => {
     const chunks = []
     req.on('data', chunk => chunks.push(chunk))
@@ -60,6 +61,8 @@ export async function checkPackedHttp(cjs, esm) {
     ])
   } finally {
     clearTimeout(deadline)
+    // The deadline can win while exerciseClients is still awaiting a response notification.
+    detach.forEach(remove => remove())
     for (const socket of sockets) socket.destroy()
     await new Promise(resolve => server.close(resolve))
   }
@@ -95,7 +98,6 @@ export async function checkPackedHttp(cjs, esm) {
     ]
     const identities = ['cjs', 'esm', 'axios']
     const listeners = clients.map(() => [])
-    const detach = []
     const listenerDone = clients.map(
       (client, index) =>
         new Promise(resolve => {
@@ -120,64 +122,60 @@ export async function checkPackedHttp(cjs, esm) {
     )
     const selection = id => ({ __retry: false, __alias: 'wire', __args: { id }, __headers: { 'X-Call': id } })
     const expected = (identity, id) => `${identity}:${id}:${identity}/${id}`
-    try {
-      // Identical memo keys in different clients must reach their own transport and headers.
-      const first = clients.map(client => client.queries.a.memo(selection('concurrent-shared')))
-      first.push(clients[0].queries.a.raw(selection('concurrent-other')))
-      const [cjsResult, esmResult, axiosResult, other] = await Promise.all(first)
-      await Promise.all(listenerDone)
-      assert.deepEqual(
-        [cjsResult, esmResult, axiosResult],
-        identities.map(id => expected(id, 'concurrent-shared'))
-      )
-      assert.equal(other.data, expected('cjs', 'concurrent-other'))
-      assert.deepEqual(responded, received.slice(0, 4).reverse(), 'fixture must respond out of arrival order')
-      assert.deepEqual(customAttempts.sort(), ['cjs', 'cjs', 'esm'], 'the default singleton must use actual Axios')
-      listeners.forEach((seen, index) =>
-        seen.forEach(info => {
-          assert.equal(info.response.data.wire, expected(identities[index], info.variables.id))
-          assert.equal(info.response.headers['x-wire'], identities[index])
-        })
-      )
-      for (const [index, client] of clients.entries()) {
-        for (let repeat = 0; repeat < 2; repeat++) {
-          const before = received.length
-          const result = await client.queries.a.raw(selection('concurrent-shared'))
-          assert.equal(result.data, expected(identities[index], 'concurrent-shared'))
-          assert.equal(received.length, before + 1, 'raw must bypass the primed memo entry')
-        }
-        for (const status of [401, 503]) {
-          for (const endpoint of [client.queries.a, client.mutations.updateA]) {
-            for (let repeat = 0; repeat < 2; repeat++) {
-              const before = received.length
-              const result = await endpoint.raw(selection(`fail-${status}`))
-              assert.equal(result.status, status)
-              assert.equal(result.outcome, 'failure')
-              assert.equal(result.reason, 'http')
-              assert.equal(received.length, before + 1, 'retry opt-out must make one HTTP attempt')
-            }
+    // Identical memo keys in different clients must reach their own transport and headers.
+    const first = clients.map(client => client.queries.a.memo(selection('concurrent-shared')))
+    first.push(clients[0].queries.a.raw(selection('concurrent-other')))
+    const [cjsResult, esmResult, axiosResult, other] = await Promise.all(first)
+    await Promise.all(listenerDone)
+    assert.deepEqual(
+      [cjsResult, esmResult, axiosResult],
+      identities.map(id => expected(id, 'concurrent-shared'))
+    )
+    assert.equal(other.data, expected('cjs', 'concurrent-other'))
+    assert.deepEqual(responded, received.slice(0, 4).reverse(), 'fixture must respond out of arrival order')
+    assert.deepEqual(customAttempts.sort(), ['cjs', 'cjs', 'esm'], 'the default singleton must use actual Axios')
+    listeners.forEach((seen, index) =>
+      seen.forEach(info => {
+        assert.equal(info.response.data.wire, expected(identities[index], info.variables.id))
+        assert.equal(info.response.headers['x-wire'], identities[index])
+      })
+    )
+    for (const [index, client] of clients.entries()) {
+      for (let repeat = 0; repeat < 2; repeat++) {
+        const before = received.length
+        const result = await client.queries.a.raw(selection('concurrent-shared'))
+        assert.equal(result.data, expected(identities[index], 'concurrent-shared'))
+        assert.equal(received.length, before + 1, 'raw must bypass the primed memo entry')
+      }
+      for (const status of [401, 503]) {
+        for (const endpoint of [client.queries.a, client.mutations.updateA]) {
+          for (let repeat = 0; repeat < 2; repeat++) {
+            const before = received.length
+            const result = await endpoint.raw(selection(`fail-${status}`))
+            assert.equal(result.status, status)
+            assert.equal(result.outcome, 'failure')
+            assert.equal(result.reason, 'http')
+            assert.equal(received.length, before + 1, 'retry opt-out must make one HTTP attempt')
           }
         }
       }
-      assert.equal(received.length, 34)
-      for (const wire of received) {
-        assert.equal(wire.method, 'POST')
-        assert.equal(wire.url, '/graphql?_q=wire')
-        assert.equal(wire.headers['content-type'], 'application/json')
-        assert.equal(wire.headers['x-transport'], wire.headers['x-client'] === 'axios' ? undefined : wire.headers['x-client'])
-        assert.equal(wire.headers['x-call'], wire.body.variables.id)
-        assert.equal(wire.headers['x-prepared'], `${wire.headers['x-client']}/${wire.body.variables.id}`)
-        assert.equal(wire.body.operationName, 'wire')
-        assert.ok(
-          ['query wire($id: String) { wire:a(id:$id)  }', 'mutation wire($id: String) { wire:updateA(id:$id)  }'].includes(
-            wire.body.query
-          ),
-          `unexpected serialized document: ${wire.body.query}`
-        )
-      }
-      console.log('packed HTTP: 34 requests passed with isolated CJS/ESM clients and default Axios')
-    } finally {
-      detach.forEach(remove => remove())
     }
+    assert.equal(received.length, 34)
+    for (const wire of received) {
+      assert.equal(wire.method, 'POST')
+      assert.equal(wire.url, '/graphql?_q=wire')
+      assert.equal(wire.headers['content-type'], 'application/json')
+      assert.equal(wire.headers['x-transport'], wire.headers['x-client'] === 'axios' ? undefined : wire.headers['x-client'])
+      assert.equal(wire.headers['x-call'], wire.body.variables.id)
+      assert.equal(wire.headers['x-prepared'], `${wire.headers['x-client']}/${wire.body.variables.id}`)
+      assert.equal(wire.body.operationName, 'wire')
+      assert.ok(
+        ['query wire($id: String) { wire:a(id:$id)  }', 'mutation wire($id: String) { wire:updateA(id:$id)  }'].includes(
+          wire.body.query
+        ),
+        `unexpected serialized document: ${wire.body.query}`
+      )
+    }
+    console.log('packed HTTP: 34 requests passed with isolated CJS/ESM clients and default Axios')
   }
 }
