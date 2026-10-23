@@ -26,10 +26,10 @@ const typesTree = {
     booksWithoutParams: {}
   }
 };
-function createMyApiClient({ transport } = {}) {
+function createMyApiClient({ url: initialUrl, transport } = {}) {
   let verbose = false;
   let headers = {};
-  let url = "http://localhost:4123/graphql";
+  let url = initialUrl ?? "http://localhost:4123/graphql";
   let retryConfig = {
     max: 0,
     before: void 0,

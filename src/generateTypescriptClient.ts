@@ -398,10 +398,10 @@ function emitClientJs(schema: PartitionedSchema, options: Omit<IClientOptions, '
     // Schema Resolution Tree
     ${getTypesTreeCode(schema.forInputExtraction)}
 
-    export function create${Case.pascal(clientName)}({ transport } = {}) {
+    export function create${Case.pascal(clientName)}({ url: initialUrl, transport } = {}) {
       let verbose = ${Boolean(options.verbose)}
       let headers = {}
-      let url = '${options.endpoint}'
+      let url = initialUrl ?? '${options.endpoint}'
       let retryConfig = {
         max: 0,
         before: undefined,

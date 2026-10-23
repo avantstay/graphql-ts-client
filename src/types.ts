@@ -231,6 +231,7 @@ export type OperationTransport = (request: OperationTransportRequest) => Promise
 
 /** Runtime options for a new, independent generated client. Omit transport to use the existing Axios implementation. */
 export type GeneratedClientOptions = {
+  url?: string
   transport?: OperationTransport
 }
 

@@ -92,8 +92,8 @@ export async function checkPackedHttp(cjs, esm) {
           req.end(JSON.stringify(body))
         })
     const clients = [
-      cjs.createSmokeApi({ transport: transport('cjs') }),
-      esm.createSmokeApi({ transport: transport('esm') }),
+      cjs.createSmokeApi({ url, transport: transport('cjs') }),
+      esm.createSmokeApi({ url, transport: transport('esm') }),
       cjs.smokeApi,
     ]
     const identities = ['cjs', 'esm', 'axios']
@@ -101,7 +101,7 @@ export async function checkPackedHttp(cjs, esm) {
     const listenerDone = clients.map(
       (client, index) =>
         new Promise(resolve => {
-          client.setUrl(url)
+          if (index === 2) client.setUrl(url)
           client.setHeader('X-Client', identities[index])
           client.setRetryConfig({ max: 2, unauthorized: true, before: () => assert.fail('unexpected retry hook') })
           detach.push(

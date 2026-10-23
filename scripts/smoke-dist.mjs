@@ -228,12 +228,14 @@ async function packedGeneratedClients() {
         void [query, url, header, retry, serialized]
         return { status: 200, headers: {}, data: { data: { a: 'typed' } } }
       }
-      const options: GeneratedClientOptions = { transport }
+      const options: GeneratedClientOptions = { url: 'https://runtime.invalid/graphql', transport }
       const client: typeof smokeApi = createSmokeApi(options)
       const result: Promise<string> = client.queries.a()
       void [result, getApiEndpointCreator]
       // @ts-expect-error a transport must return an HTTP status number
       createSmokeApi({ transport: async () => ({ status: 'wrong', headers: {} }) })
+      // @ts-expect-error a runtime URL must be a string
+      createSmokeApi({ url: 123 })
     `
     )
     const program = ts.createProgram([probePath], {

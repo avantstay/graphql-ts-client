@@ -33,10 +33,10 @@ __export(exports, {
 var import_endpoint = __toModule(require("@avantstay/graphql-ts-client/endpoint"));
 const formatGraphQL = (query) => query;
 const typesTree = {};
-function createClient({ transport } = {}) {
+function createClient({ url: initialUrl, transport } = {}) {
   let verbose = false;
   let headers = {};
-  let url = "https://sample.endpoint.com/graphl";
+  let url = initialUrl ?? "https://sample.endpoint.com/graphl";
   let retryConfig = {
     max: 0,
     before: void 0,
@@ -112,10 +112,10 @@ var stdin_default = client;
   "mjs": "import { getApiEndpointCreator } from "@avantstay/graphql-ts-client/endpoint";
 const formatGraphQL = (query) => query;
 const typesTree = {};
-function createClient({ transport } = {}) {
+function createClient({ url: initialUrl, transport } = {}) {
   let verbose = false;
   let headers = {};
-  let url = "https://sample.endpoint.com/graphl";
+  let url = initialUrl ?? "https://sample.endpoint.com/graphl";
   let retryConfig = {
     max: 0,
     before: void 0,

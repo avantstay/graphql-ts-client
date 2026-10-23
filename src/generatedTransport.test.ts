@@ -32,6 +32,36 @@ const flushListeners = () => new Promise(resolve => setTimeout(resolve, 0))
 
 afterEach(() => jest.restoreAllMocks())
 
+test('a constructor URL governs calls while preserving call overrides, setters and sibling defaults', async () => {
+  const { createBookingApi } = generated()
+  const requests: OperationTransportRequest[] = []
+  const transport = async (request: OperationTransportRequest) => {
+    requests.push(request)
+    return success('b1')
+  }
+  const client = createBookingApi({
+    url: 'https://runtime.invalid/graphql',
+    transport,
+  })
+
+  const selection = { __args: { id: 'b1' }, id: true }
+  const result = await client.queries.booking.raw(selection)
+  await client.queries.booking.raw({ ...selection, __url: 'https://call.invalid/graphql' })
+  await client.queries.booking.raw(selection)
+  client.setUrl('https://changed.invalid/graphql')
+  await client.queries.booking.raw(selection)
+  await createBookingApi({ transport }).queries.booking.raw(selection)
+
+  expect(requests.map(request => request.url)).toEqual([
+    'https://runtime.invalid/graphql',
+    'https://call.invalid/graphql',
+    'https://runtime.invalid/graphql',
+    'https://changed.invalid/graphql',
+    'https://default.invalid/graphql',
+  ])
+  expect(result).toMatchObject({ status: 200, outcome: 'success', data: { id: 'b1' } })
+})
+
 test('generated clients isolate concurrent wires, headers, listeners, results and memo state', async () => {
   const { createBookingApi, bookingApi, State } = generated()
   const requests: OperationTransportRequest[][] = [[], []]

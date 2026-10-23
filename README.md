@@ -105,10 +105,13 @@ const transport: OperationTransport = async ({ url, body, headers, params }) => 
   return sendOperation(url, body, headers, params)
 }
 
-const client = createMyAwesomeApi({ transport })
+const client = createMyAwesomeApi({ url: 'https://runtime.example.com/graphql', transport })
 client.setHeader('X-Client', 'example')
 const response = await client.queries.article.raw({ __retry: false, title: true })
 ```
+
+The optional `url` applies from the first operation call. If omitted, the client uses its generated endpoint. Existing `setUrl()`
+and per-call `__url` overrides remain available; a per-call override does not change the client's URL.
 
 The callback runs after the existing serializer and request listeners, with merged content-type, client and call headers. Treat
 request values as input; copy before transforming them. It returns `{ status, headers, data }`, where `data` is the GraphQL
