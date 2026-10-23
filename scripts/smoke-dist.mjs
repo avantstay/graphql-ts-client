@@ -6,6 +6,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
+import { checkPackedHttp } from './packed-http.mjs'
 
 import '../dist/endpoint.mjs'
 import {
@@ -167,12 +168,15 @@ async function packedGeneratedClients() {
     execFileSync('tar', ['-xzf', path.join(root, packed.filename), '--strip-components=1', '-C', packageRoot])
     const consumerRequire = createRequire(path.join(root, 'consumer.js'))
     const packedCjs = consumerRequire(PUBLISHED_SPECIFIER)
-    const output = packedCjs.generateTypescriptClientFromSDL(SDL, {
-      endpoint: 'https://packed.invalid/graphql',
-      clientName: 'smokeApi',
-      output: path.join(root, 'client.ts'),
-      skipCache: true,
-    })
+    const output = packedCjs.generateTypescriptClientFromSDL(
+      'type Query { a(id: String): String } type Mutation { updateA(id: String): String }',
+      {
+        endpoint: 'https://packed.invalid/graphql',
+        clientName: 'smokeApi',
+        output: path.join(root, 'client.ts'),
+        skipCache: true,
+      }
+    )
     assertGeneratedOutput('packed', output)
     const cjs = consumerRequire('./client.js')
     const esm = await import(pathToFileURL(path.join(root, 'client.mjs')).href)
@@ -197,6 +201,8 @@ async function packedGeneratedClients() {
         },
       ])
     }
+    // This runs before CHECKS installs any Axios stubs.
+    await checkPackedHttp(cjs, esm)
     const probePath = path.join(root, 'probe.ts')
     fs.writeFileSync(
       probePath,
