@@ -1,5 +1,5 @@
 import _axios, { AxiosStatic } from 'axios'
-import { classify, Classification, isRequestFailure } from './settle/classify'
+import { classify, Classification } from './settle/classify'
 import { attachClassification } from './settle/settleRaw'
 import {
   ClientConfig,
@@ -137,7 +137,7 @@ export async function graphqlRequest({
     const built = buildResponse(attempt, queryName, errorsParser)
     response = built.response
 
-    const next = nextRetry(attempt.status, built.classification, budget, attempt.responseData.data?.[queryName])
+    const next = nextRetry(attempt.status, built.classification, budget)
     if (!next) break
     budget = next.budget
     if (next.kind === 'error') await beforeErrorRetry(client, { queryName, query, variables, response })
@@ -168,13 +168,11 @@ function initialRetryBudget(client: ClientConfig, shouldRetry: boolean, kind: Op
 export function nextRetry(
   status: number,
   classification: Classification,
-  budget: RetryBudget,
-  data?: unknown
+  budget: RetryBudget
 ): { kind: 'unauthorized' | 'error'; budget: RetryBudget } | undefined {
   if (status === 401 && budget.unauthorized) {
     return { kind: 'unauthorized', budget: { ...budget, unauthorized: false } }
   }
-  if (isRequestFailure(data, classification.errors)) return undefined
   const failedToRun =
     classification.outcome === 'failure' && (classification.reason === 'http' || classification.reason === 'no-data')
   if (failedToRun && budget.errors > 0) {

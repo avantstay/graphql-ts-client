@@ -9,10 +9,30 @@ import { GraphQLResponseBody, OperationTransportResponse } from './types'
 
 type Fixture = { status: number; headers: Record<string, string>; body: GraphQLResponseBody; provenance: string }
 
+const requestCases = [
+  { name: 'validation', rootName: 'topProducts', code: 'GRAPHQL_VALIDATION_FAILED', errorCount: 2, status: 400 },
+  { name: 'multiple-operations', rootName: 'viewer', code: 'GRAPHQL_VALIDATION_FAILED', errorCount: 1, status: 400 },
+  { name: 'unknown-operation-name', rootName: 'viewer', code: 'GRAPHQL_UNKNOWN_OPERATION_NAME', errorCount: 1, status: 400 },
+  { name: 'parse', rootName: 'i', code: 'PARSING_ERROR', errorCount: 1, status: 400 },
+  { name: 'coercion', rootName: 'int', code: 'VALIDATION_INVALID_TYPE_VARIABLE', errorCount: 1, status: 400 },
+  { name: 'coercion-null', rootName: 'int', code: 'VALIDATION_INVALID_TYPE_VARIABLE', errorCount: 1, status: 400 },
+  { name: 'coercion-wrong-type', rootName: 'int', code: 'VALIDATION_INVALID_TYPE_VARIABLE', errorCount: 1, status: 400 },
+  { name: 'csrf', rootName: 'viewer', code: 'CSRF_ERROR', errorCount: 1, status: 400 },
+  { name: 'get-mutation', rootName: 'renameProduct', code: 'MUTATION_FORBIDDEN', errorCount: 1, status: 405 },
+] as const
+
 const cases = [
   { name: 'success', rootName: 'product', outcome: 'success', failedPaths: [], errorPaths: [], redacted: [] },
   {
     name: 'partial-path-error',
+    rootName: 'product',
+    outcome: 'partial',
+    failedPaths: ['name'],
+    errorPaths: [['name']],
+    redacted: [true],
+  },
+  {
+    name: 'partial-bad-user-input',
     rootName: 'product',
     outcome: 'partial',
     failedPaths: ['name'],
@@ -46,33 +66,14 @@ const cases = [
     errorPaths: [undefined],
     redacted: [false],
   },
-  {
-    name: 'validation',
-    rootName: 'topProducts',
-    outcome: 'failure',
-    reason: 'http',
+  ...requestCases.map(contract => ({
+    ...contract,
+    outcome: 'failure' as const,
+    reason: 'http' as const,
     failedPaths: [],
-    errorPaths: [undefined, undefined],
-    redacted: [false, false],
-  },
-  {
-    name: 'parse',
-    rootName: 'i',
-    outcome: 'failure',
-    reason: 'http',
-    failedPaths: [],
-    errorPaths: [undefined],
-    redacted: [false],
-  },
-  {
-    name: 'coercion',
-    rootName: 'int',
-    outcome: 'failure',
-    reason: 'http',
-    failedPaths: [],
-    errorPaths: [undefined],
-    redacted: [false],
-  },
+    errorPaths: Array.from({ length: contract.errorCount }, () => undefined),
+    redacted: Array.from({ length: contract.errorCount }, () => false),
+  })),
   {
     name: 'subgraph-error-with-code',
     rootName: 'product',
@@ -94,6 +95,15 @@ describe.each(cases)('router contract: $name', contract => {
     for (const router of [apollo, hive]) {
       const fixture: Fixture = router.responses[contract.name]
       const { body, status, headers } = fixture
+      if ('code' in contract) {
+        expect(status).toBe(contract.status)
+        expect(body.data).toBeUndefined()
+        expect(body.errors).toHaveLength(contract.errorCount)
+        for (const error of body.errors ?? []) {
+          expect(error.extensions?.code).toBe(contract.code)
+          expect(error.path).toBeUndefined()
+        }
+      }
       const expected = {
         outcome: contract.outcome,
         ...('reason' in contract ? { reason: contract.reason } : {}),
@@ -117,8 +127,9 @@ describe.each(cases)('router contract: $name', contract => {
 
       const transport = jest.fn(async () => attempt(fixture))
       const client = { ...clientWithRetries(0), transport }
+      const kind = contract.name === 'get-mutation' ? 'mutation' : 'query'
       const raw = await graphqlRequest({
-        kind: 'query',
+        kind,
         queryName: contract.rootName,
         query: '',
         variables: {},
@@ -130,32 +141,32 @@ describe.each(cases)('router contract: $name', contract => {
       expect(raw.errors).toEqual(body.errors)
       expect(raw.data).toEqual(body.data)
 
-      const endpoint = createTestEndpointCreator({ getClient: () => client })('query', contract.rootName)
-      const settled = await endpoint.settle({ id: true } as any)
+      const createEndpoint = createTestEndpointCreator({ getClient: () => client })
+      const endpoint =
+        kind === 'mutation' ? createEndpoint('mutation', contract.rootName) : createEndpoint('query', contract.rootName)
+      const settled = await endpoint.settle({ id: true, ...(kind === 'mutation' ? { __settledSources: 'none' } : {}) } as any)
       expect(settled).toMatchObject({ ...expected, status })
-      if (contract.name === 'partial-path-error') {
+      expect(settled.warnings).toEqual([])
+      if (contract.outcome === 'failure') expect(settled.data).toBeNull()
+      if (contract.name === 'partial-path-error' || contract.name === 'partial-bad-user-input') {
         expect(settled.data).toEqual({ id: '1', name: undefined, requiredName: 'Desk' })
       }
+      if (contract.name === 'partial-bad-user-input') expect(settled.errors[0].extensions?.code).toBe('BAD_USER_INPUT')
+      if (contract.name === 'get-mutation') expect(raw.headers).toEqual({ allow: 'POST' })
+      expect(transport).toHaveBeenCalledTimes(2)
       results.push(settled)
     }
-    const comparable = ({ outcome, failedPaths, errors, ...result }: SettledResponse<unknown>) => ({
+    const comparable = ({ outcome, failedPaths, errors, data, status, warnings, ...result }: SettledResponse<unknown>) => ({
       outcome,
+      data,
+      status,
+      warnings,
       reason: 'reason' in result ? result.reason : undefined,
       failedPaths,
-      errors: errors.map(({ path, redacted, extensions }) => ({ path, redacted, extensions })),
+      errors: errors.map(({ path, redacted, extensions }) => ({ path, redacted, code: extensions?.code })),
     })
-    if (contract.name === 'coercion') {
-      expect(results.map(result => result.errors[0].extensions?.code)).toEqual([
-        'VALIDATION_INVALID_TYPE_VARIABLE',
-        'BAD_USER_INPUT',
-      ])
-      expect(results.map(result => result.outcome)).toEqual(['failure', 'failure'])
-      expect(results.map(result => 'reason' in result && result.reason)).toEqual(['http', 'http'])
-      expect(results.map(result => result.failedPaths)).toEqual([[], []])
-    } else {
-      expect(comparable(results[0])).toEqual(comparable(results[1]))
-      if (contract.name !== 'parse') expect(results[0].errors).toEqual(results[1].errors)
-    }
+    // Router diagnostics and extensions.name may differ; each is preserved above.
+    expect(comparable(results[0])).toEqual(comparable(results[1]))
   })
 })
 
@@ -190,13 +201,43 @@ it.each(['unauthenticated', 'unauthorized'] as const)(
   }
 )
 
-it.each(['validation', 'parse', 'coercion'] as const)('keeps request failure retry behavior explicit for %s', async name => {
+it.each(requestCases)('preserves 13.2.0 retry behavior for $name', async contract => {
   for (const router of [apollo, hive]) {
-    const fixture: Fixture = router.responses[name]
+    const fixture: Fixture = router.responses[contract.name]
     const transport = jest.fn().mockResolvedValue(attempt(fixture))
-    const client = { ...clientWithRetries(2), transport }
-    await graphqlRequest({ kind: 'query', queryName: 'product', query: '', variables: {}, failureMode: 'silent', client })
-    // Apollo's coercion code is outside the request-error set; the router shim still needs to align it.
-    expect(transport).toHaveBeenCalledTimes(name === 'coercion' && router === apollo ? 3 : 1)
+    const before = jest.fn()
+    const client = { ...clientWithRetries(2, { before }), transport }
+    const kind = contract.name === 'get-mutation' ? 'mutation' : 'query'
+    const result = await graphqlRequest({
+      kind,
+      queryName: contract.rootName,
+      query: '',
+      variables: {},
+      failureMode: 'silent',
+      client,
+    })
+    expect(result).toMatchObject({ outcome: 'failure', reason: 'http', status: contract.status })
+    expect(transport).toHaveBeenCalledTimes(kind === 'query' ? 3 : 1)
+    expect(before).toHaveBeenCalledTimes(kind === 'query' ? 2 : 0)
+  }
+})
+
+it('does not retry a partial subgraph BAD_USER_INPUT', async () => {
+  for (const router of [apollo, hive]) {
+    const fixture: Fixture = router.responses['partial-bad-user-input']
+    const transport = jest.fn().mockResolvedValue(attempt(fixture))
+    const before = jest.fn()
+    const client = { ...clientWithRetries(2, { before }), transport }
+    const endpoint = createTestEndpointCreator({ getClient: () => client })('query', 'product')
+    const result = await endpoint.settle({ id: true, name: true } as any)
+    expect(result).toMatchObject({
+      outcome: 'partial',
+      status: 200,
+      data: { id: '1', name: undefined },
+      failedPaths: ['name'],
+      errors: [{ path: ['name'], extensions: { code: 'BAD_USER_INPUT' } }],
+    })
+    expect(transport).toHaveBeenCalledTimes(1)
+    expect(before).not.toHaveBeenCalled()
   }
 })

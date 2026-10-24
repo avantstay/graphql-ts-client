@@ -118,8 +118,8 @@ describe('retrying a 401', () => {
 })
 
 describe('nextRetry', () => {
-  const failed = { outcome: 'failure', reason: 'http', errors: [] } as any
-  const succeeded = { outcome: 'success', errors: [] } as any
+  const failed = { outcome: 'failure', reason: 'http' } as any
+  const succeeded = { outcome: 'success' } as any
 
   it('spends the 401 retry on a 401, and the error budget on other failures', () => {
     expect(nextRetry(401, failed, { unauthorized: true, errors: 1 })).toEqual({

@@ -170,7 +170,7 @@ Every request is classified into an `outcome`, and every `outcome: 'failure'` ca
 
 | `reason` (only set when `outcome` is `'failure'`) | Meaning                                                                                                                                                             |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `'http'`                                          | HTTP status ≥ 400, a transport error, or a request-error code with no data, including at HTTP 200.                                                                  |
+| `'http'`                                          | The HTTP response status was ≥ 400, or the request never reached the server (network/transport error).                                                              |
 | `'no-data'`                                       | The root field's value was `null`. Either the server sent `null` outright, or a failure deeper in the tree propagated up to it (see [Failed paths](#failed-paths)). |
 | `'partial-source'`                                | (mutations only) One of the sources passed to `settle()` in `__settledSources` did not itself settle as `'success'`, so the mutation was never sent.                |
 
@@ -514,9 +514,7 @@ myAwesomeApi.setRetryConfig({
 ```
 
 Retries are deliberately narrow. Only queries are retried, and only when `outcome` is `'failure'` with `reason: 'http'` or
-`'no-data'`. Responses with no data and `GRAPHQL_PARSE_FAILED`, `GRAPHQL_VALIDATION_FAILED`, `BAD_USER_INPUT` or
-`PERSISTED_QUERY_NOT_FOUND` are request failures with reason `'http'`, even at HTTP 200. They get no error retries because
-repeating the same operation cannot fix them.
+`'no-data'`. Those are the two cases where nothing usable came back, so repeating the request cannot lose anything.
 
 Never retried: any mutation (its server-side effect is unknown once it has errored), and any `'partial'` result (you already have
 usable data — retrying would discard it).

@@ -144,12 +144,12 @@
               }
             ],
             "extensions": {
-              "code": "GRAPHQL_PARSE_FAILED"
+              "code": "PARSING_ERROR"
             }
           }
         ]
       },
-      "provenance": "Synthesized Apollo parser diagnostic, not a recorded body."
+      "provenance": "Synthesized envelope using the router-specific parser diagnostic and the post-!74 HTTP 400 / PARSING_ERROR contract."
     },
     "coercion": {
       "status": 400,
@@ -165,7 +165,7 @@
           }
         ]
       },
-      "provenance": "Synthesized diagnostic; Apollo 2.16.3 FetchError code/name extension and supergraph HTTP 400 are verified in source."
+      "provenance": "Synthesized missing-variable envelope using the router-specific diagnostic/extensions and the post-!74 HTTP 400 / VALIDATION_INVALID_TYPE_VARIABLE contract."
     },
     "subgraph-error-with-code": {
       "status": 200,
@@ -190,6 +190,128 @@
         ]
       },
       "provenance": "Synthesized full envelope from local E2E non-null-failure assertions and its subgraph fixture."
+    },
+    "multiple-operations": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Must provide operation name if query contains multiple operations.",
+            "extensions": {
+              "code": "GRAPHQL_VALIDATION_FAILED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "unknown-operation-name": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Unknown operation named \"Missing\"",
+            "extensions": {
+              "code": "GRAPHQL_UNKNOWN_OPERATION_NAME"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-null": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" got invalid value null; expected type \"Int!\".",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-wrong-type": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" got invalid value \"wrong\"; expected type \"Int!\".",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "csrf": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "This operation has been blocked as a potential Cross-Site Request Forgery (CSRF).",
+            "extensions": {
+              "code": "CSRF_ERROR"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "get-mutation": {
+      "status": 405,
+      "headers": {
+        "allow": "POST"
+      },
+      "body": {
+        "errors": [
+          {
+            "message": "Mutations can only be sent over HTTP POST",
+            "extensions": {
+              "code": "MUTATION_FORBIDDEN"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "partial-bad-user-input": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          },
+          "product": {
+            "id": "1",
+            "name": null,
+            "requiredName": "Desk"
+          }
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted",
+            "path": ["product", "name"],
+            "extensions": {
+              "code": "BAD_USER_INPUT",
+              "requestId": "e2e-request"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from the post-!74 bad-user-input subgraph fixture and partial-response E2E assertions; not a recorded response."
     }
   }
 }

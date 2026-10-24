@@ -131,34 +131,34 @@
       "provenance": "Synthesized equivalent validation diagnostic; local compat plugin preserves messages/locations and sets GRAPHQL_VALIDATION_FAILED plus HTTP 400."
     },
     "parse": {
-      "status": 200,
+      "status": 400,
       "headers": {},
       "body": {
         "errors": [
           {
             "message": "Failed to parse GraphQL operation: Parse error at 1:14\nUnexpected end of input\nExpected }\n",
             "extensions": {
-              "code": "GRAPHQL_PARSE_FAILED"
+              "code": "PARSING_ERROR"
             }
           }
         ]
       },
-      "provenance": "Body copied from Hive 0.3.5 should_return_full_message_for_a_client_caused_error snapshot. HTTP 200 for application/json follows ClientPipelineError::default_status_code."
+      "provenance": "Synthesized envelope using the router-specific parser diagnostic and the post-!74 HTTP 400 / PARSING_ERROR contract."
     },
     "coercion": {
-      "status": 200,
+      "status": 400,
       "headers": {},
       "body": {
         "errors": [
           {
             "message": "Variable \"$v\" has invalid value: Expected a value of non-null type \"Int!\" to be provided.",
             "extensions": {
-              "code": "BAD_USER_INPUT"
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
             }
           }
         ]
       },
-      "provenance": "Body copied from Hive 0.3.5 coercion_error_is_a_request_error snapshot; HTTP 200 checked by coercion_error_status_by_accept_header."
+      "provenance": "Synthesized missing-variable envelope using the router-specific diagnostic/extensions and the post-!74 HTTP 400 / VALIDATION_INVALID_TYPE_VARIABLE contract."
     },
     "subgraph-error-with-code": {
       "status": 200,
@@ -183,6 +183,126 @@
         ]
       },
       "provenance": "Synthesized full envelope from local E2E non-null-failure assertions and its subgraph fixture."
+    },
+    "multiple-operations": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Must provide operation name if query contains multiple operations.",
+            "extensions": {
+              "code": "GRAPHQL_VALIDATION_FAILED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "unknown-operation-name": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Unknown operation named \"Missing\"",
+            "extensions": {
+              "code": "GRAPHQL_UNKNOWN_OPERATION_NAME"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-null": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" has invalid value: Expected type \"Int!\", found null.",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-wrong-type": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" has invalid value: Expected type \"Int!\", found \"wrong\".",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "csrf": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "This operation has been blocked as a potential Cross-Site Request Forgery (CSRF).",
+            "extensions": {
+              "code": "CSRF_ERROR"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "get-mutation": {
+      "status": 405,
+      "headers": {
+        "allow": "POST"
+      },
+      "body": {
+        "errors": [
+          {
+            "message": "Mutations can only be sent over HTTP POST",
+            "extensions": {
+              "code": "MUTATION_FORBIDDEN"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "partial-bad-user-input": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          },
+          "product": {
+            "id": "1",
+            "name": null,
+            "requiredName": "Desk"
+          }
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted",
+            "path": ["product", "name"],
+            "extensions": {
+              "code": "BAD_USER_INPUT",
+              "requestId": "e2e-request"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from the post-!74 bad-user-input subgraph fixture and partial-response E2E assertions; not a recorded response."
     }
   }
 }
