@@ -51,6 +51,27 @@ describe('classify', () => {
     ).toMatchObject({ outcome: 'partial', failedPaths: [] })
   })
 
+  describe.each(['GRAPHQL_PARSE_FAILED', 'GRAPHQL_VALIDATION_FAILED', 'BAD_USER_INPUT', 'PERSISTED_QUERY_NOT_FOUND'])(
+    'request error %s',
+    code => {
+      const errors = [{ message: 'Request rejected', extensions: { code } }]
+
+      it.each([null, undefined])('uses http for missing data %s at both 200 and 400', data => {
+        const at200 = classify({ ...base, data, errors })
+        const at400 = classify({ ...base, data, errors, status: 400 })
+        expect(at200).toEqual(at400)
+        expect(at200).toMatchObject({ outcome: 'failure', reason: 'http', failedPaths: [] })
+      })
+
+      it('keeps usable data partial', () => {
+        expect(classify({ ...base, data: { id: 'user_1' }, errors })).toMatchObject({
+          outcome: 'partial',
+          failedPaths: [],
+        })
+      })
+    }
+  )
+
   it('keeps every error, so codes and request ids stay readable from extensions', () => {
     const errors = [
       { message: 'x', extensions: { code: 'SERVICE_UNAVAILABLE', requestId: 'r1' } },

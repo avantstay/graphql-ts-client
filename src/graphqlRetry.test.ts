@@ -33,6 +33,59 @@ describe('retry policy', () => {
     expect(result.outcome).toBe('success')
   })
 
+  describe.each(['GRAPHQL_PARSE_FAILED', 'GRAPHQL_VALIDATION_FAILED', 'BAD_USER_INPUT', 'PERSISTED_QUERY_NOT_FOUND'])(
+    'request error %s',
+    code => {
+      it.each([200, 400])('does not retry at status %s or run the before hook', async status => {
+        const errors = [{ message: 'Request rejected', extensions: { code } }]
+        const { axios, calls } = countingAxios([{ status, data: { errors } }])
+        const before = jest.fn()
+        const result = await graphqlRequest({ ...common, kind: 'query', axios, client: clientWithRetries(2, { before }) })
+
+        expect(result).toMatchObject({ outcome: 'failure', reason: 'http', errors, status, failedPaths: [] })
+        expect(calls).toHaveLength(1)
+        expect(before).not.toHaveBeenCalled()
+      })
+    }
+  )
+
+  it('still retries an HTTP failure with usable data and a request-error code', async () => {
+    const { axios, calls } = countingAxios([
+      { status: 400, data: { data: { user: { id: 'user_1' } }, errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] } },
+      { status: 200, data: { data: { user: { id: 'user_1' } } } },
+    ])
+    const result = await graphqlRequest({ ...common, kind: 'query', axios, client: clientWithRetries(2) })
+    expect(calls).toHaveLength(2)
+    expect(result.outcome).toBe('success')
+  })
+
+  it('uses the original request errors for retries when errorsParser rewrites them', async () => {
+    const { axios, calls } = countingAxios([
+      { status: 200, data: { errors: [{ message: 'Invalid variable', extensions: { code: 'BAD_USER_INPUT' } }] } },
+    ])
+    const result = await graphqlRequest({
+      ...common,
+      kind: 'query',
+      axios,
+      client: clientWithRetries(2),
+      errorsParser: () => [{ message: 'Rewritten' }],
+    })
+    expect(calls).toHaveLength(1)
+    expect(result).toMatchObject({ reason: 'http', errors: [{ message: 'Rewritten' }] })
+  })
+
+  it.each([undefined, 'SERVICE_UNAVAILABLE', 'NEW_DOMAIN_CODE', 'graphql_parse_failed'])(
+    'keeps no-data retries for code %s',
+    async code => {
+      const { axios, calls } = countingAxios([
+        { status: 200, data: { errors: [{ message: 'Unavailable', extensions: { code } }] } },
+      ])
+      const result = await graphqlRequest({ ...common, kind: 'query', axios, client: clientWithRetries(2) })
+      expect(calls).toHaveLength(3)
+      expect(result.reason).toBe('no-data')
+    }
+  )
+
   it('does not retry a partial query', async () => {
     const axios = axiosReturning([
       {

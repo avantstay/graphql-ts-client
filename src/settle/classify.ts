@@ -55,6 +55,18 @@ function resolveFailures(data: unknown, errors: SettledError[]): { failedSegment
   return { failedSegments, rootLost }
 }
 
+const REQUEST_ERROR_CODES = new Set([
+  'GRAPHQL_PARSE_FAILED',
+  'GRAPHQL_VALIDATION_FAILED',
+  'BAD_USER_INPUT',
+  'PERSISTED_QUERY_NOT_FOUND',
+])
+
+/** Request errors cannot succeed by repeating the same operation, regardless of the HTTP status. */
+export function isRequestFailure(data: unknown, errors: SettledError[]): boolean {
+  return (data === null || data === undefined) && errors.some(error => REQUEST_ERROR_CODES.has(error.extensions?.code ?? ''))
+}
+
 /** Decides whether a response succeeded, is partial, or failed, resolving each error to the path that actually failed. */
 export function classify(input: ClassifyInput): Classification {
   const errors = normalizeErrors(input.errors, input.rootName)
@@ -69,7 +81,9 @@ export function classify(input: ClassifyInput): Classification {
   })
 
   if (input.status !== undefined && input.status >= 400) return failure('http', [], [])
-  if (input.data === null || input.data === undefined) return failure('no-data', [], [])
+  if (input.data === null || input.data === undefined) {
+    return failure(isRequestFailure(input.data, errors) ? 'http' : 'no-data', [], [])
+  }
 
   const { failedSegments, rootLost } = resolveFailures(input.data, errors)
   const failedPaths = failedSegments.map(pathToString)
