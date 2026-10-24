@@ -1,0 +1,308 @@
+{
+  "router": "hive",
+  "version": "0.3.5 + apollo_compat",
+  "responses": {
+    "success": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          },
+          "product": {
+            "id": "1",
+            "name": "Desk",
+            "requiredName": "Desk"
+          }
+        }
+      },
+      "provenance": "Body copied from the local E2E success assertion."
+    },
+    "partial-path-error": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          },
+          "product": {
+            "id": "1",
+            "name": null,
+            "requiredName": "Desk"
+          }
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted",
+            "path": ["product", "name"],
+            "extensions": {
+              "code": "NEW_DOMAIN_CODE",
+              "requestId": "e2e-request"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from local E2E nullable-failure assertions and its subgraph fixture."
+    },
+    "redacted-subgraph-error": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "product": null
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted"
+          }
+        ]
+      },
+      "provenance": "Synthesized code-less masked failure. The compat plugin removes Hive DOWNSTREAM_SERVICE_ERROR."
+    },
+    "unauthenticated": {
+      "status": 401,
+      "headers": {
+        "www-authenticate": "Bearer error=\"invalid_token\""
+      },
+      "body": {
+        "errors": [
+          {
+            "message": "Unauthorized",
+            "extensions": {
+              "code": "UNAUTHENTICATED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized requested UNAUTHENTICATED variant; the local auth plugins emit UNAUTHORIZED instead."
+    },
+    "unauthorized": {
+      "status": 401,
+      "headers": {
+        "www-authenticate": "Bearer error=\"invalid_token\""
+      },
+      "body": {
+        "errors": [
+          {
+            "message": "Unauthorized",
+            "extensions": {
+              "code": "UNAUTHORIZED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from local E2E expired-token assertions and auth plugin builders."
+    },
+    "validation": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Cannot query field \"foo\" on type \"Query\".",
+            "locations": [
+              {
+                "line": 1,
+                "column": 22
+              }
+            ],
+            "extensions": {
+              "code": "GRAPHQL_VALIDATION_FAILED"
+            }
+          },
+          {
+            "message": "Unknown argument \"ack\" on field \"Query.topProducts\".",
+            "locations": [
+              {
+                "line": 1,
+                "column": 38
+              }
+            ],
+            "extensions": {
+              "code": "GRAPHQL_VALIDATION_FAILED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized equivalent validation diagnostic; local compat plugin preserves messages/locations and sets GRAPHQL_VALIDATION_FAILED plus HTTP 400."
+    },
+    "parse": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Failed to parse GraphQL operation: Parse error at 1:14\nUnexpected end of input\nExpected }\n",
+            "extensions": {
+              "code": "PARSING_ERROR"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized envelope using the router-specific parser diagnostic and the post-!74 HTTP 400 / PARSING_ERROR contract."
+    },
+    "coercion": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" has invalid value: Expected a value of non-null type \"Int!\" to be provided.",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized missing-variable envelope using the router-specific diagnostic/extensions and the post-!74 HTTP 400 / VALIDATION_INVALID_TYPE_VARIABLE contract."
+    },
+    "subgraph-error-with-code": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "product": null,
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          }
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted",
+            "path": ["product", "requiredName"],
+            "extensions": {
+              "code": "NEW_DOMAIN_CODE",
+              "requestId": "e2e-request"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from local E2E non-null-failure assertions and its subgraph fixture."
+    },
+    "multiple-operations": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Must provide operation name if query contains multiple operations.",
+            "extensions": {
+              "code": "GRAPHQL_VALIDATION_FAILED"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "unknown-operation-name": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Unknown operation named \"Missing\"",
+            "extensions": {
+              "code": "GRAPHQL_UNKNOWN_OPERATION_NAME"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-null": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" has invalid value: Expected type \"Int!\", found null.",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "coercion-wrong-type": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "Variable \"$v\" has invalid value: Expected type \"Int!\", found \"wrong\".",
+            "extensions": {
+              "code": "VALIDATION_INVALID_TYPE_VARIABLE"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "csrf": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "errors": [
+          {
+            "message": "This operation has been blocked as a potential Cross-Site Request Forgery (CSRF).",
+            "extensions": {
+              "code": "CSRF_ERROR"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "get-mutation": {
+      "status": 405,
+      "headers": {
+        "allow": "POST"
+      },
+      "body": {
+        "errors": [
+          {
+            "message": "Mutations can only be sent over HTTP POST",
+            "extensions": {
+              "code": "MUTATION_FORBIDDEN"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from post-!74 Docker E2E assertions and the router contract; not a recorded response."
+    },
+    "partial-bad-user-input": {
+      "status": 200,
+      "headers": {},
+      "body": {
+        "data": {
+          "viewer": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "email": "router-e2e@avantstay.com"
+          },
+          "product": {
+            "id": "1",
+            "name": null,
+            "requiredName": "Desk"
+          }
+        },
+        "errors": [
+          {
+            "message": "Subgraph errors redacted",
+            "path": ["product", "name"],
+            "extensions": {
+              "code": "BAD_USER_INPUT",
+              "requestId": "e2e-request"
+            }
+          }
+        ]
+      },
+      "provenance": "Synthesized full envelope from the post-!74 bad-user-input subgraph fixture and partial-response E2E assertions; not a recorded response."
+    }
+  }
+}
