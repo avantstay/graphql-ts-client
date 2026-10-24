@@ -1,6 +1,12 @@
 /** Smoke test for the built dist/ bundles, covering the es5 downlevelling and cross-bundle behaviour jest cannot see. */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { execFileSync } from 'node:child_process'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import ts from 'typescript'
+import { checkPackedHttp } from './packed-http.mjs'
 
 import '../dist/endpoint.mjs'
 import {
@@ -143,8 +149,114 @@ async function mutationWithNoneSourcesSendsAndSucceeds() {
   assert.deepEqual(settledResult.data, { b: 1 })
 }
 
+/** Exercise generated consumers of the packed package, using only its public export map. */
+async function packedGeneratedClients() {
+  const repoRoot = fileURLToPath(new URL('../', import.meta.url))
+  const cacheRoot = path.join(repoRoot, '.cache')
+  fs.mkdirSync(cacheRoot, { recursive: true })
+  const root = fs.mkdtempSync(path.join(cacheRoot, 'packed-smoke-'))
+  try {
+    const packOutput = JSON.parse(
+      execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', root], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      })
+    )
+    const packed = Array.isArray(packOutput) ? packOutput[0] : packOutput[PUBLISHED_SPECIFIER]
+    const packageRoot = path.join(root, 'node_modules', '@avantstay', 'graphql-ts-client')
+    fs.mkdirSync(packageRoot, { recursive: true })
+    execFileSync('tar', ['-xzf', path.join(root, packed.filename), '--strip-components=1', '-C', packageRoot])
+    const consumerRequire = createRequire(path.join(root, 'consumer.js'))
+    const packedCjs = consumerRequire(PUBLISHED_SPECIFIER)
+    const output = packedCjs.generateTypescriptClientFromSDL(
+      'type Query { a(id: String): String } type Mutation { updateA(id: String): String }',
+      {
+        endpoint: 'https://packed.invalid/graphql',
+        clientName: 'smokeApi',
+        output: path.join(root, 'client.ts'),
+        skipCache: true,
+      }
+    )
+    assertGeneratedOutput('packed', output)
+    const cjs = consumerRequire('./client.js')
+    const esm = await import(pathToFileURL(path.join(root, 'client.mjs')).href)
+    for (const clientModule of [cjs, esm]) {
+      assert.equal(clientModule.default, clientModule.smokeApi)
+      assert.equal(typeof clientModule.createSmokeApi, 'function')
+      const requests = []
+      const client = clientModule.createSmokeApi({
+        transport: async request => {
+          requests.push(request)
+          return { status: 200, headers: { 'x-smoke': 'ok' }, data: { data: { a: 'packed' } } }
+        },
+      })
+      client.setHeader('X-Client', 'packed')
+      assert.equal(await client.queries.a({ __retry: false }), 'packed')
+      assert.deepEqual(requests, [
+        {
+          url: 'https://packed.invalid/graphql',
+          body: { query: 'query a { a  }', variables: {}, operationName: 'a' },
+          headers: { 'Content-Type': 'application/json', 'X-Client': 'packed' },
+          params: { _q: 'a' },
+        },
+      ])
+    }
+    // This runs before CHECKS installs any Axios stubs.
+    await checkPackedHttp(cjs, esm)
+    const probePath = path.join(root, 'probe.ts')
+    fs.writeFileSync(
+      probePath,
+      `
+      import { createSmokeApi, smokeApi } from './client'
+      import type { OperationTransport, OperationTransportRequest, OperationTransportResponse, GeneratedClientOptions } from '${PUBLISHED_SPECIFIER}'
+      import { getApiEndpointCreator } from '${PUBLISHED_SPECIFIER}/endpoint'
+      const transport: OperationTransport = async (request: OperationTransportRequest): Promise<OperationTransportResponse> => {
+        const query: string = request.body.query
+        const url: string = request.url
+        const header: string = request.headers['X-Client']
+        const retry: number | undefined = request.params._retrial
+        const serialized: string = JSON.stringify(request.body)
+        const id = request.body.variables.id
+        // @ts-expect-error opaque variable values must be narrowed before string operations
+        id.toUpperCase()
+        if (typeof id === 'string') {
+          const upper: string = id.toUpperCase()
+          void upper
+        }
+        // @ts-expect-error serialized variables are transport input, not writable adapter state
+        request.body.variables.id = 'changed'
+        void [query, url, header, retry, serialized]
+        return { status: 200, headers: {}, data: { data: { a: 'typed' } } }
+      }
+      const options: GeneratedClientOptions = { url: 'https://runtime.invalid/graphql', transport }
+      const client: typeof smokeApi = createSmokeApi(options)
+      const result: Promise<string> = client.queries.a()
+      void [result, getApiEndpointCreator]
+      // @ts-expect-error a transport must return an HTTP status number
+      createSmokeApi({ transport: async () => ({ status: 'wrong', headers: {} }) })
+      // @ts-expect-error a runtime URL must be a string
+      createSmokeApi({ url: 123 })
+    `
+    )
+    const program = ts.createProgram([probePath], {
+      strict: true,
+      noEmit: true,
+      target: ts.ScriptTarget.ES2020,
+      moduleResolution: ts.ModuleResolutionKind.Node16,
+      module: ts.ModuleKind.Node16,
+      esModuleInterop: true,
+      skipLibCheck: true,
+    })
+    const diagnostics = ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+    assert.deepEqual(diagnostics, [], 'packed public declarations must type-check')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}
+
 /** Every check the smoke test runs, in order, as `[description, check]`. */
 const CHECKS = [
+  ['packed CJS/ESM generated factories and public declarations', packedGeneratedClients],
   ['ESM entry generates a client (guards the prettier default-import fix)', esmEntryGeneratesAClient],
   ['CJS entry generates a client', cjsEntryGeneratesAClient],
   ['CJS-constructed errors are instanceof the ESM classes', cjsErrorsAreInstanceofEsmClasses],

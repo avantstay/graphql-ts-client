@@ -380,97 +380,100 @@ function emitClientJs(schema: PartitionedSchema, options: Omit<IClientOptions, '
   return `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols
     import { getApiEndpointCreator } from '${clientImportPath()}/endpoint'
-    
+
     ${
       options.formatGraphQL || options.verbose
         ? `
       import { format as formatCode } from "prettier/standalone"
       import parserGraphql from "prettier/parser-graphql"
-      
+
       const formatGraphQL = (query) => formatCode(query, {parser: 'graphql', plugins: [parserGraphql]})`
         : `
       const formatGraphQL = (query) => query`
     }
-    
+
     // Enums
     ${schema.enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'js' })).join('\n')}
 
     // Schema Resolution Tree
     ${getTypesTreeCode(schema.forInputExtraction)}
 
-    let verbose = ${Boolean(options.verbose)}
-    let headers = {}
-    let url = '${options.endpoint}'
-    let retryConfig = {
-      max: 0,
-      before: undefined,
-      waitBeforeRetry: 0
-    }
-    let requestListeners = []
-    let responseListeners = []
-    let errorsParser = ${options.errorsParser}
-    // noinspection JSUnusedLocalSymbols
-    let apiEndpoint = getApiEndpointCreator({
-      getClient: () => ({ url, headers, retryConfig }),
-      requestListeners,
-      responseListeners,
-      maxAge: 30000,
-      verbose,
-      typesTree,
-      formatGraphQL,
-      errorsParser
-    })
+    export function create${Case.pascal(clientName)}({ url: initialUrl, transport } = {}) {
+      let verbose = ${Boolean(options.verbose)}
+      let headers = {}
+      let url = initialUrl ?? '${options.endpoint}'
+      let retryConfig = {
+        max: 0,
+        before: undefined,
+        waitBeforeRetry: 0
+      }
+      let requestListeners = []
+      let responseListeners = []
+      let errorsParser = ${options.errorsParser}
+      // noinspection JSUnusedLocalSymbols
+      let apiEndpoint = getApiEndpointCreator({
+        getClient: () => ({ url, headers, retryConfig, transport }),
+        requestListeners,
+        responseListeners,
+        maxAge: 30000,
+        verbose,
+        typesTree,
+        formatGraphQL,
+        errorsParser
+      })
 
-    export const ${clientName} = {
-      addRequestListener: (listener) => {
-        requestListeners.push(listener)
-        return () => {
+      return {
+        addRequestListener: (listener) => {
+          requestListeners.push(listener)
+          return () => {
+            const index = requestListeners.indexOf(listener)
+            if (index > -1) requestListeners.splice(index, 1)
+          }
+        },
+        removeRequestListener: (listener) => {
           const index = requestListeners.indexOf(listener)
           if (index > -1) requestListeners.splice(index, 1)
-        }
-      },
-      removeRequestListener: (listener) => {
-        const index = requestListeners.indexOf(listener)
-        if (index > -1) requestListeners.splice(index, 1)
-      },
-      addResponseListener: (listener) => {
-        responseListeners.push(listener)
-        return () => {
+        },
+        addResponseListener: (listener) => {
+          responseListeners.push(listener)
+          return () => {
+            const index = responseListeners.indexOf(listener)
+            if (index > -1) responseListeners.splice(index, 1)
+          }
+        },
+        removeResponseListener: (listener) => {
           const index = responseListeners.indexOf(listener)
           if (index > -1) responseListeners.splice(index, 1)
+        },
+        setHeader: (key, value) => {
+          headers[key] = value
+        },
+        setHeaders: (newHeaders) => {
+          headers = { ...newHeaders }
+        },
+        setRetryConfig: (options) => {
+          if (!Number.isInteger(options.max) || options.max < 0) {
+            throw new Error('retryOptions.max should be a non-negative integer')
+          }
+
+          retryConfig = {
+            max: options.max,
+            waitBeforeRetry: options.waitBeforeRetry,
+            before: options.before,
+            unauthorized: options.unauthorized
+          }
+        },
+        setUrl: (_url) => url = _url,
+        queries: {
+          ${schema.queries.map(query => gqlEndpointToCode('query', query, 'js')).join(',\n')}
+        },
+        mutations: {
+          ${schema.mutations.map(mutation => gqlEndpointToCode('mutation', mutation, 'js')).join(',\n')}
         }
-      },
-      removeResponseListener: (listener) => {
-        const index = responseListeners.indexOf(listener)
-        if (index > -1) responseListeners.splice(index, 1)
-      },
-      setHeader: (key, value) => {
-        headers[key] = value
-      },
-      setHeaders: (newHeaders) => {
-        headers = newHeaders
-      },
-      setRetryConfig: (options) => {
-        if (!Number.isInteger(options.max) || options.max < 0) {
-          throw new Error('retryOptions.max should be a non-negative integer')
-        }
-        
-        retryConfig = { 
-          max: options.max,
-          waitBeforeRetry: options.waitBeforeRetry,
-          before: options.before,
-          unauthorized: options.unauthorized
-        }
-      },
-      setUrl: (_url) => url = _url,
-      queries: {
-        ${schema.queries.map(query => gqlEndpointToCode('query', query, 'js')).join(',\n')}
-      },
-      mutations: {
-        ${schema.mutations.map(mutation => gqlEndpointToCode('mutation', mutation, 'js')).join(',\n')}
       }
     }
 
+    export const ${clientName} = create${Case.pascal(clientName)}()
     export default ${clientName}`
 }
 
@@ -479,7 +482,7 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
   // language=TypeScript
   return `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
-    import { IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources } from '${clientImportPath()}'
+    import { IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources, GeneratedClientOptions } from '${clientImportPath()}'
 
     // Scalars
     export type IDate = string | Date
@@ -487,9 +490,9 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
 
     // Enums
     ${schema.enums.map(it => gqlSchemaToCode(it, { selection: false, outputType: 'ts' })).join('\n')}
-    
+
     type AllEnums = ${schema.enums.length ? schema.enums.map(it => it.name).join(' | ') : 'never'}
-    
+
     // Args
     ${[...schema.queries, ...schema.mutations]
       .map(query => {
@@ -514,7 +517,9 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
       .filter(it => it.name !== 'Query')
       .map(it => gqlSchemaToCode(it, { selection: true, outputType: 'ts' }))
       .join('\n')}
-    
+
+    export declare function create${Case.pascal(clientName)}(options?: GeneratedClientOptions): typeof ${clientName}
+
     export declare const ${clientName}: {
       addRequestListener: (listener: IRequestListener) => () => void
       removeRequestListener: (listener: IRequestListener) => void

@@ -200,7 +200,43 @@ export class MissingSourcesError extends Error {
   }
 }
 
+/** A serialized operation, after request listeners and header merging, ready for one transport attempt. */
+export type OperationTransportRequest = {
+  url: string
+  body: {
+    query: string
+    variables: Readonly<Record<string, unknown>>
+    operationName: string
+  }
+  headers: Record<string, string>
+  params: { _q: string; _retrial?: number }
+}
+
+/** The GraphQL envelope returned by a transport. HTTP failures should resolve with their status and body. */
+export type GraphQLResponseBody = {
+  data?: any
+  errors?: any[]
+  warnings?: any
+  extensions?: { warnings?: any }
+}
+
+export type OperationTransportResponse = {
+  status: number
+  headers: Record<string, unknown>
+  data?: GraphQLResponseBody
+}
+
+/** Performs one attempt. The caller owns network I/O and transport policy; rejected promises propagate to raw(). */
+export type OperationTransport = (request: OperationTransportRequest) => Promise<OperationTransportResponse>
+
+/** Runtime options for a new, independent generated client. Omit transport to use the existing Axios implementation. */
+export type GeneratedClientOptions = {
+  url?: string
+  transport?: OperationTransport
+}
+
 export type ClientConfig = {
+  transport?: OperationTransport
   url: string
   headers: {
     [key: string]: string
