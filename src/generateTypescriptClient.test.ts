@@ -290,7 +290,7 @@ describe('v13 generator output', () => {
     expect(output.typings).toMatch(/updateUser: MutationEndpoint</)
     expect(output.typings).toMatch(/user: Endpoint</)
     expect(output.typings).toMatch(
-      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*SubscriptionEndpoint,\s*MutationSources,?\s*}\s*from/
+      /import\s*{\s*IRequestListener,\s*IResponseListener,\s*Endpoint,\s*MutationEndpoint,\s*SubscriptionEndpoint,\s*MutationSources,\s*GeneratedClientOptions,?\s*}\s*from/
     )
   })
 
