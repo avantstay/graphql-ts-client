@@ -14,6 +14,7 @@ import {
   GraphQLClientError as GraphQLClientErrorFromEsm,
   isSettled as isSettledFromEsm,
   MissingSourcesError as MissingSourcesErrorFromEsm,
+  resubscribe as resubscribeFromEsm,
 } from '../dist/index.mjs'
 
 const requireFromScript = createRequire(import.meta.url)
@@ -149,6 +150,35 @@ async function mutationWithNoneSourcesSendsAndSucceeds() {
   assert.deepEqual(settledResult.data, { b: 1 })
 }
 
+/** A subscription that opens, delivers one value and completes, for checking the bundled resubscribe(). */
+function oneShotSubscription(value) {
+  return {
+    [Symbol.asyncIterator]: () => {
+      throw new Error('not iterated in the smoke test')
+    },
+    subscribe: observer => {
+      observer.open?.()
+      observer.next?.(value)
+      observer.complete?.()
+      return () => undefined
+    },
+    close: () => undefined,
+  }
+}
+
+async function resubscribeReconnectsOnCompletion(resubscribe) {
+  let opened = 0
+  const values = []
+  await new Promise((resolve, reject) =>
+    resubscribe(() => oneShotSubscription(++opened), { initialDelayMs: 1, maxRetries: 2 }).subscribe({
+      next: value => values.push(value),
+      error: reject,
+      complete: resolve,
+    })
+  )
+  assert.deepEqual(values, [1, 2, 3])
+}
+
 /** Exercise generated consumers of the packed package, using only its public export map. */
 async function packedGeneratedClients() {
   const repoRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -276,6 +306,11 @@ const CHECKS = [
     "settle() on a mutation with __settledSources: 'none' sends and succeeds",
     withStubbedPost(SUCCESS_BODY, mutationWithNoneSourcesSendsAndSucceeds),
   ],
+  [
+    'resubscribe() from the CJS entry reconnects on completion',
+    () => resubscribeReconnectsOnCompletion(cjsIndexBundle.resubscribe),
+  ],
+  ['resubscribe() from the ESM entry reconnects on completion', () => resubscribeReconnectsOnCompletion(resubscribeFromEsm)],
 ]
 
 async function main() {

@@ -643,9 +643,48 @@ protocols the AvantStay backend speaks: GraphQL over Server-Sent Events (`text/e
 (`multipart/mixed;subscriptionSpec="1.0"`), which is what Apollo Router uses towards browsers. The server picks one and the client
 reads whichever came back, so nothing is configured on the client. Heartbeats are skipped.
 
-Streaming needs a global `fetch` whose responses expose a readable body: every current browser and Node 18+. There is no
-reconnection on a dropped connection; the subscription ends with an error (or a `'failure'` result from `settle()`), and the
-caller decides whether to open a new one.
+Streaming needs a global `fetch` whose responses expose a readable body: every current browser and Node 18+. A subscription does
+not reconnect by itself: a dropped connection ends it with an error (or a `'failure'` result from `settle()`). To keep one open,
+wrap it in `resubscribe()`.
+
+### Reconnecting
+
+`resubscribe(open, options)` keeps a subscription open across dropped connections and server completions (a server may end
+long-lived streams on purpose). It calls `open` for every connection, so the request listeners run again and a fresh token is
+sent, and it waits an exponential backoff with jitter between attempts. It returns a `Subscription` like any other, which ends
+only when it is closed, `signal` aborts, or the retries run out:
+
+```typescript
+import { resubscribe } from '@avantstay/graphql-ts-client'
+
+const controller = new AbortController()
+const comments = resubscribe(() => myAwesomeApi.subscriptions.articleCommentAdded({ __args: { articleId }, id: true }), {
+  signal: controller.signal,
+  onStateChange: ({ state }) => setLive(state === 'live'), // 'connecting' | 'live' | 'retrying' | 'closed'
+})
+
+comments.subscribe({ next: comment => render(comment) })
+controller.abort() // closes the open connection and cancels any pending retry
+```
+
+A connection is `live` once the server answers with a stream, before any event. Each `next` from any connection reaches the
+returned subscription; errors and completions of single connections do not, they schedule the next attempt.
+
+A connection can die without closing, for example when a proxy or the network drops it. Set `idleTimeoutMs` above the server's
+heartbeat interval to treat a silent connection as dropped and reconnect.
+
+| Option           | Default       | Meaning                                                                                             |
+| ---------------- | ------------- | --------------------------------------------------------------------------------------------------- |
+| `signal`         | none          | Stops for good when aborted.                                                                        |
+| `onStateChange`  | none          | `({ state, attempt, delayMs?, error? }) => void`, called on every state change.                     |
+| `initialDelayMs` | `1000`        | Base delay before the first reconnect.                                                              |
+| `multiplier`     | `2`           | Growth of the base delay per reconnect in a row.                                                    |
+| `maxDelayMs`     | `30000`       | Cap on the base delay. Each wait is a random point in the upper half of the base delay.             |
+| `resetAfterMs`   | `10000`       | A connection live this long resets the backoff to `initialDelayMs`.                                 |
+| `maxRetries`     | unlimited     | Reconnects in a row before giving up: the subscription then ends with the last error, or completes. |
+| `shouldRetry`    | every error   | `(error) => boolean`; return `false` for errors not worth retrying, such as a refused subscription. |
+| `idleTimeoutMs`  | off           | Reconnects a live connection that receives nothing, not even a heartbeat, for this long.            |
+| `random`         | `Math.random` | Jitter source, for tests.                                                                           |
 
 ## Reference
 
@@ -721,11 +760,11 @@ throws for any other reason: transport failures become `outcome: 'failure', reas
 
 What a subscription endpoint returns, from the direct call, `raw()` and `settle()` alike. `Subscription<Value>` is:
 
-| Member                   | Signature                                                                                                              | Meaning                                                                                                                |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `[Symbol.asyncIterator]` | `AsyncIterable<Value>`                                                                                                 | Iterate with `for await`. The connection opens on the first pull and closes when the loop ends, however it ends.       |
-| `subscribe(observer)`    | `(observer: { next?: (value: Value) => void; error?: (error: unknown) => void; complete?: () => void }) => () => void` | Opens the connection if needed and delivers every event to `observer`. The returned function detaches it.              |
-| `close()`                | `() => void`                                                                                                           | Closes the connection. Loops end, observers are not called again, and nothing is reported as an error or a completion. |
+| Member                   | Signature                                                                                                                                 | Meaning                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `[Symbol.asyncIterator]` | `AsyncIterable<Value>`                                                                                                                    | Iterate with `for await`. The connection opens on the first pull and closes when the loop ends, however it ends.       |
+| `subscribe(observer)`    | `(observer: { open?: () => void; next?: (value: Value) => void; error?: (error: unknown) => void; complete?: () => void }) => () => void` | Opens the connection if needed and delivers every event to `observer`. The returned function detaches it.              |
+| `close()`                | `() => void`                                                                                                                              | Closes the connection. Loops end, observers are not called again, and nothing is reported as an error or a completion. |
 
 ### Helpers
 
