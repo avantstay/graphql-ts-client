@@ -127,6 +127,9 @@ retries. The client does not add these policies to a custom transport.
 Use both for one callback invocation per call. `memo()` and `memoRaw()` still cache within their own client instance; calling the
 factory without a transport uses Axios with the same endpoint behavior as the singleton.
 
+The transport applies to queries and mutations. Subscriptions always stream over the global `fetch` (see
+[Subscriptions](#subscriptions)), using the client's URL, headers and request listeners.
+
 ## Partial responses in one minute
 
 **The problem.** A GraphQL server does not have to answer all-or-nothing. When one field fails, it can still return every other
