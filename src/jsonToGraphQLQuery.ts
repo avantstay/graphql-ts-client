@@ -4,6 +4,9 @@ import entries from 'lodash/toPairs.js'
 import { OperationKind } from './types'
 
 const VAR_PREFIX = '@@VAR@@'
+
+/** The root type of the resolution tree each operation kind starts from. */
+const ROOT_TYPE_NAME: Record<OperationKind, string> = { query: 'Query', mutation: 'Mutation', subscription: 'Subscription' }
 const VAR_PREFIX_LENGTH = VAR_PREFIX.length
 
 type Variable = { type: any; value: any }
@@ -29,7 +32,7 @@ export function jsonToGraphQLQuery({
 
   const occurrences = extractVariables({
     jsonQuery: { [queryName]: newJsonQuery },
-    parentType: kind === 'query' ? typesTree.Query : typesTree.Mutation,
+    parentType: typesTree[ROOT_TYPE_NAME[kind]],
   })
 
   const variableItems = nameVariables(occurrences)

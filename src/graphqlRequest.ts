@@ -55,7 +55,7 @@ async function postOperation({
 }
 
 /** Classifies one attempt's payload and assembles the response the endpoint layer reads. */
-function buildResponse(
+export function buildResponse(
   attempt: { responseData: GraphQLResponseBody; headers: any; status: number },
   queryName: string,
   errorsParser?: (errors: any[]) => any

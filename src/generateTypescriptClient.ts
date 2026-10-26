@@ -45,6 +45,13 @@ const SETTLED_SOURCES_DOC = `/** Required by settle(): the settled results this 
 
 const INPUT_TYPE_INDENT = '\n    '
 
+/** The exported endpoint type each operation kind is declared with in the generated `.d.ts`. */
+const ENDPOINT_TYPE_NAME: Record<OperationKind, string> = {
+  query: 'Endpoint',
+  mutation: 'MutationEndpoint',
+  subscription: 'SubscriptionEndpoint',
+}
+
 function gqlScalarToTypescript(gqlType: string) {
   if (/(int|long|double|decimal|float)/i.test(gqlType)) return 'number'
   if (/boolean/i.test(gqlType)) return 'boolean'
@@ -148,7 +155,8 @@ function gqlEndpointToCode(kind: OperationKind, endpoint: IntrospectionField, co
   const argsType = endpoint.args && endpoint.args.length ? getArgsType(endpoint) : null
   const inputTypeLines = [
     '__headers?: {[key: string]: string};',
-    '__retry?: boolean;',
+    // A subscription is never retried on errors: its events are not a single answer that can be asked for again.
+    kind === 'subscription' ? '__signal?: AbortSignal;' : '__retry?: boolean;',
     '__alias?: string;',
     '__url?: string;',
     kind === 'mutation' ? `${SETTLED_SOURCES_DOC}${INPUT_TYPE_INDENT}__settledSources?: MutationSources;` : null,
@@ -160,7 +168,7 @@ function gqlEndpointToCode(kind: OperationKind, endpoint: IntrospectionField, co
 
   const outputType = gqlTypeToTypescript(endpoint.type, { required: true })
 
-  const endpointTypeName = kind === 'mutation' ? 'MutationEndpoint' : 'Endpoint'
+  const endpointTypeName = ENDPOINT_TYPE_NAME[kind]
 
   return codeOutputType === 'ts'
     ? `${endpoint.name}: ${endpointTypeName}<${inputType}, ${outputType}, AllEnums>`
@@ -348,6 +356,7 @@ type FetchIntrospectionOptions = Omit<IClientOptions, 'output' | 'introspectionE
 type PartitionedSchema = {
   queries: ReadonlyArray<IntrospectionField>
   mutations: ReadonlyArray<IntrospectionField>
+  subscriptions: ReadonlyArray<IntrospectionField>
   enums: IntrospectionEnumType[]
   scalars: IntrospectionEnumType[]
   objectTypes: (IntrospectionObjectType | IntrospectionInputObjectType)[]
@@ -358,6 +367,7 @@ type PartitionedSchema = {
 function partitionSchema(types: ReadonlyArray<IntrospectionType>): PartitionedSchema {
   const queries = (<IntrospectionObjectType>types.find(it => it.name === 'Query'))?.fields || []
   const mutations = (<IntrospectionObjectType>types.find(it => it.name === 'Mutation'))?.fields || []
+  const subscriptions = (<IntrospectionObjectType>types.find(it => it.name === 'Subscription'))?.fields || []
   const enums = types.filter(it => it.kind === 'ENUM' && !it.name.startsWith('__')) as IntrospectionEnumType[]
   const scalars = types.filter(
     it => it.kind === 'SCALAR' && !/decimal|int|float|string|long|boolean/i.test(it.name)
@@ -371,7 +381,7 @@ function partitionSchema(types: ReadonlyArray<IntrospectionType>): PartitionedSc
     it => !it.name.startsWith('__') && ['OBJECT'].includes(it.kind)
   ) as IntrospectionObjectType[]
 
-  return { queries, mutations, enums, scalars, objectTypes, forInputExtraction }
+  return { queries, mutations, subscriptions, enums, scalars, objectTypes, forInputExtraction }
 }
 
 /** Renders the client's runtime module: the enums, the schema resolution tree and one endpoint per operation. */
@@ -469,6 +479,9 @@ function emitClientJs(schema: PartitionedSchema, options: Omit<IClientOptions, '
         },
         mutations: {
           ${schema.mutations.map(mutation => gqlEndpointToCode('mutation', mutation, 'js')).join(',\n')}
+        },
+        subscriptions: {
+          ${schema.subscriptions.map(subscription => gqlEndpointToCode('subscription', subscription, 'js')).join(',\n')}
         }
       }
     }
@@ -482,7 +495,7 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
   // language=TypeScript
   return `
     // noinspection TypeScriptUnresolvedVariable, ES6UnusedImports, JSUnusedLocalSymbols, TypeScriptCheckImport
-    import { IRequestListener, IResponseListener, Endpoint, MutationEndpoint, MutationSources, GeneratedClientOptions } from '${clientImportPath()}'
+    import { IRequestListener, IResponseListener, Endpoint, MutationEndpoint, SubscriptionEndpoint, MutationSources, GeneratedClientOptions } from '${clientImportPath()}'
 
     // Scalars
     export type IDate = string | Date
@@ -494,7 +507,7 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
     type AllEnums = ${schema.enums.length ? schema.enums.map(it => it.name).join(' | ') : 'never'}
 
     // Args
-    ${[...schema.queries, ...schema.mutations]
+    ${[...schema.queries, ...schema.mutations, ...schema.subscriptions]
       .map(query => {
         const argsType = getArgsType(query)
         return `export interface ${argsType.alias} ${argsType.type}`
@@ -534,6 +547,9 @@ function emitClientTypings(schema: PartitionedSchema, clientName: string): strin
       },
       mutations: {
         ${schema.mutations.map(q => gqlEndpointToCode('mutation', q, 'ts')).join(',\n')}
+      },
+      subscriptions: {
+        ${schema.subscriptions.map(q => gqlEndpointToCode('subscription', q, 'ts')).join(',\n')}
       }
     }
 

@@ -98,7 +98,8 @@ function createMyApiClient({ url: initialUrl, transport } = {}) {
       booksWithOptionalParams: apiEndpoint("query", "booksWithOptionalParams"),
       failingQuery: apiEndpoint("query", "failingQuery")
     },
-    mutations: {}
+    mutations: {},
+    subscriptions: {}
   };
 }
 const myApiClient = createMyApiClient();

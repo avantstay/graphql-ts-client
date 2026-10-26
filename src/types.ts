@@ -3,8 +3,8 @@ import type { FailureReason, MutationSources, Outcome, SettledResponse } from '.
 export type Maybe<Value> = null | undefined | Value
 export type Defined<Value> = Exclude<Value, undefined>
 
-/** Whether an operation reads or writes: the two GraphQL root operations this client emits. */
-export type OperationKind = 'query' | 'mutation'
+/** Which GraphQL root operation a call emits: a read, a write, or a stream of results. */
+export type OperationKind = 'query' | 'mutation' | 'subscription'
 
 /** How a failed request reports itself: `loud` throws `GraphQLClientError`, `silent` resolves with the errors. */
 export type FailureMode = 'loud' | 'silent'
@@ -167,6 +167,49 @@ export type Endpoint<Selectable, Result, Ignored> = EndpointBase<Selectable, Res
 /** An Endpoint whose `settle()` requires `__settledSources`. */
 export type MutationEndpoint<Selectable, Result, Ignored> = EndpointBase<Selectable, Result, Ignored> & {
   settle: MutationSettleEndpoint<Selectable, JsonOutput<Result, Ignored>, Ignored>
+}
+
+/** Callbacks for `Subscription.subscribe()`; every one is optional. */
+export type SubscriptionObserver<Value> = {
+  /** The server accepted the subscription and its stream is being read; called at most once, before any `next`. */
+  open?: () => void
+  /** Bytes arrived on the open stream, an event or a heartbeat; lets a watchdog tell a quiet stream from a dead one. */
+  activity?: () => void
+  next?: (value: Value) => void
+  error?: (error: unknown) => void
+  complete?: () => void
+}
+
+/**
+ * One open subscription. Iterate it with `for await`, or attach an observer with `subscribe()`; the request is made
+ * on the first of either. `close()` ends it; so does breaking out of the loop, or aborting the call's `__signal`.
+ */
+export type Subscription<Value> = AsyncIterable<Value> & {
+  /** Delivers every value to `observer` until the subscription ends; the returned function detaches the observer. */
+  subscribe: (observer: SubscriptionObserver<Value>) => () => void
+  /** Closes the connection and ends every iteration; observers are not told, since they asked for it. */
+  close: () => void
+}
+
+/** The `raw()` call signature on a subscription: every event as a `RawResponse`, with its own outcome. */
+export type RawSubscriptionEndpoint<Selectable, Result, Ignored> = <Selection extends Selectable>(
+  jsonQuery?: Selection
+) => Subscription<RawResponse<Projection<Selection, Result, Ignored>>>
+
+/** The `settle()` call signature on a subscription: every event as a settled result, never throwing. */
+export type SettleSubscriptionEndpoint<Selectable, Result, Ignored> = <Selection extends Selectable>(
+  jsonQuery?: Selection
+) => Subscription<SettledResponse<Projection<Selection, Result, Ignored>>>
+
+/**
+ * A subscription endpoint. The direct call yields each event's data and throws `GraphQLClientError` on the first event
+ * that carries errors, like a query's direct call does; `raw()` and `settle()` mirror their query counterparts per event.
+ */
+export type SubscriptionEndpoint<Selectable, Result, Ignored> = (<Selection extends Selectable>(
+  jsonQuery?: Selection
+) => Subscription<Projection<Selection, JsonOutput<Result, Ignored>, Ignored>>) & {
+  raw: RawSubscriptionEndpoint<Selectable, JsonOutput<Result, Ignored>, Ignored>
+  settle: SettleSubscriptionEndpoint<Selectable, JsonOutput<Result, Ignored>, Ignored>
 }
 
 const MISSING_SOURCES_BRAND = Symbol.for('@avantstay/graphql-ts-client/MissingSourcesError')
