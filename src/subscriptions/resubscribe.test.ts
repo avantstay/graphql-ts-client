@@ -216,6 +216,27 @@ describe('resubscribe', () => {
     expect(states.map(change => change.state)).toEqual(['connecting', 'closed'])
   })
 
+  it('keeps a connection that only sends heartbeats, and reconnects one that goes silent past idleTimeoutMs', async () => {
+    useFetch()
+    const { subscription, states } = live({ idleTimeoutMs: 30 })
+    subscription.subscribe({})
+
+    await waitFor(connectionCount(1))
+    await waitFor(() => states.some(change => change.state === 'live'), 'live')
+    for (let beat = 0; beat < 4; beat++) {
+      await sleep(15)
+      fake.connections[0].push(sse.heartbeat)
+    }
+    expect(fake.connections).toHaveLength(1)
+
+    await waitFor(connectionCount(2))
+    expect(fake.connections[0].signal.aborted).toBe(true)
+    expect(states.find(change => change.state === 'retrying')).toMatchObject({
+      error: new Error('The subscription received nothing for 30 ms'),
+    })
+    subscription.close()
+  })
+
   it('reconnects after an event that carries errors, by default', async () => {
     useFetch((connection, index): FakeAnswer => {
       if (index === 0) connection.push(sse.next({ errors: [{ message: 'resolver failed' }] }))

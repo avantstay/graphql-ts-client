@@ -173,6 +173,8 @@ export type MutationEndpoint<Selectable, Result, Ignored> = EndpointBase<Selecta
 export type SubscriptionObserver<Value> = {
   /** The server accepted the subscription and its stream is being read; called at most once, before any `next`. */
   open?: () => void
+  /** Bytes arrived on the open stream, an event or a heartbeat; lets a watchdog tell a quiet stream from a dead one. */
+  activity?: () => void
   next?: (value: Value) => void
   error?: (error: unknown) => void
   complete?: () => void

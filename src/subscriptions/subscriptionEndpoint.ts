@@ -131,6 +131,7 @@ export function createSubscriptionEndpoint<Selectable, Result, Ignored>(
 
     await readSubscription(response, signal, {
       open: () => sink.open(),
+      activity: () => sink.activity(),
       next: body => deliver(body, response.status),
       error: fail,
       complete: () => sink.complete(),

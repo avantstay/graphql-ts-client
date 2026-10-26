@@ -4,6 +4,8 @@ import { Subscription, SubscriptionObserver } from '../types'
 export type Sink<Value> = {
   /** The source is connected and streaming; observers hear of it once. */
   open(): void
+  /** Bytes arrived, an event or a heartbeat. */
+  activity(): void
   next(value: Value): void
   error(error: unknown): void
   complete(): void
@@ -62,6 +64,10 @@ export function createSubscription<Value>(start: (sink: Sink<Value>) => () => vo
       if (closed || opened) return
       opened = true
       observers.slice().forEach(observer => observer.open?.())
+    },
+    activity() {
+      if (closed) return
+      observers.slice().forEach(observer => observer.activity?.())
     },
     next(value) {
       if (closed) return

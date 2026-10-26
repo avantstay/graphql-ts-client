@@ -670,6 +670,9 @@ controller.abort() // closes the open connection and cancels any pending retry
 A connection is `live` once the server answers with a stream, before any event. Each `next` from any connection reaches the
 returned subscription; errors and completions of single connections do not, they schedule the next attempt.
 
+A connection can die without closing, for example when a proxy or the network drops it. Set `idleTimeoutMs` above the server's
+heartbeat interval to treat a silent connection as dropped and reconnect.
+
 | Option           | Default       | Meaning                                                                                             |
 | ---------------- | ------------- | --------------------------------------------------------------------------------------------------- |
 | `signal`         | none          | Stops for good when aborted.                                                                        |
@@ -680,6 +683,7 @@ returned subscription; errors and completions of single connections do not, they
 | `resetAfterMs`   | `10000`       | A connection live this long resets the backoff to `initialDelayMs`.                                 |
 | `maxRetries`     | unlimited     | Reconnects in a row before giving up: the subscription then ends with the last error, or completes. |
 | `shouldRetry`    | every error   | `(error) => boolean`; return `false` for errors not worth retrying, such as a refused subscription. |
+| `idleTimeoutMs`  | off           | Reconnects a live connection that receives nothing, not even a heartbeat, for this long.            |
 | `random`         | `Math.random` | Jitter source, for tests.                                                                           |
 
 ## Reference

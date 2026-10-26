@@ -32,6 +32,12 @@ export type ResubscribeOptions = {
   maxRetries?: number
   /** Whether a connection that ended with `error` is worth reopening. A server completion always is. Default: every error is. */
   shouldRetry?: (error: unknown) => boolean
+  /**
+   * Reconnects when a live connection receives nothing, not even a heartbeat, for this long, so a connection that died
+   * without closing (a proxy or network drop) is not reported `live` forever. Set it above the server's heartbeat
+   * interval. Default: off.
+   */
+  idleTimeoutMs?: number
   /** The random source for jitter, in [0, 1). Default `Math.random`. */
   random?: () => number
 }
@@ -60,6 +66,7 @@ export function resubscribe<Value>(open: () => Subscription<Value>, options: Res
     resetAfterMs = 10000,
     maxRetries = Infinity,
     shouldRetry = () => true,
+    idleTimeoutMs,
     random = Math.random,
   } = options
 
@@ -67,7 +74,13 @@ export function resubscribe<Value>(open: () => Subscription<Value>, options: Res
     let stopped = false
     let reconnects = 0
     let timer: ReturnType<typeof setTimeout> | undefined
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
     let current: Subscription<Value> | undefined
+
+    const clearIdleTimer = () => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer)
+      idleTimer = undefined
+    }
 
     const report = (change: ConnectionStateChange) => onStateChange?.(change)
 
@@ -103,7 +116,18 @@ export function resubscribe<Value>(open: () => Subscription<Value>, options: Res
         if (ended || stopped) return
         ended = true
         current = undefined
+        clearIdleTimer()
         scheduleReconnect(failure, liveSince)
+      }
+      // Restarted by everything the live connection receives; when it fires, the connection is treated as dropped.
+      const touch = () => {
+        if (idleTimeoutMs === undefined || ended || stopped) return
+        clearIdleTimer()
+        idleTimer = setTimeout(() => {
+          const connection = current
+          end({ error: new Error(`The subscription received nothing for ${idleTimeoutMs} ms`) })
+          connection?.close()
+        }, idleTimeoutMs)
       }
 
       let attempt: Subscription<Value>
@@ -114,11 +138,16 @@ export function resubscribe<Value>(open: () => Subscription<Value>, options: Res
       }
       current = attempt
       attempt.subscribe({
-        open: markLive,
+        open: () => {
+          markLive()
+          touch()
+        },
+        activity: touch,
         next: value => {
           if (ended || stopped) return
           // A source that never reports `open` is live once it delivers.
           markLive()
+          touch()
           sink.next(value)
         },
         error: error => end({ error }),
@@ -131,6 +160,7 @@ export function resubscribe<Value>(open: () => Subscription<Value>, options: Res
       stopped = true
       if (timer !== undefined) clearTimeout(timer)
       timer = undefined
+      clearIdleTimer()
       const connection = current
       current = undefined
       connection?.close()
