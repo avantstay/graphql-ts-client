@@ -1,5 +1,6 @@
 import { ApiConfig, executeListeners, logIfVerbose, prepareCall, PreparedCall, projectRootField } from '../endpoint'
-import { buildResponse, GraphQLBody, nextRetry } from '../graphqlRequest'
+import { buildResponse, nextRetry } from '../graphqlRequest'
+import { GraphQLResponseBody } from '../types'
 import { ClassifiedRawResponse, settleRawResult, settleThrown } from '../settle/settleRaw'
 import { SettledResponse } from '../settle/types'
 import {
@@ -99,7 +100,7 @@ export function createSubscriptionEndpoint<Selectable, Result, Ignored>(
     const start = +new Date()
     const response = await connectWithRetry(call, signal)
 
-    const deliver = (body: GraphQLBody, status: number) => {
+    const deliver = (body: GraphQLResponseBody, status: number) => {
       const { response: result } = buildResponse(
         { responseData: body, headers: response.headers, status },
         call.alias,
@@ -117,7 +118,7 @@ export function createSubscriptionEndpoint<Selectable, Result, Ignored>(
     if (response.status >= 400) {
       // The server refused the subscription the way it refuses a bad query: one JSON error response.
       const text = await response.text()
-      let body: GraphQLBody = {}
+      let body: GraphQLResponseBody = {}
       try {
         body = JSON.parse(text)
       } catch {

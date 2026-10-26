@@ -92,6 +92,44 @@ async function somewhereOverTheRainbow() {
 }
 ```
 
+### Independent clients and custom transport
+
+Each generated module also exports `createMyAwesomeApi`, named `create` followed by the PascalCase client name. With the unnamed
+default client, the factory is `createClient`. Each call creates independent headers, URL, retry configuration, listeners and memo
+caches. The existing named and default singleton exports keep using Axios.
+
+```typescript
+import { createMyAwesomeApi } from './myAwesomeApi'
+import type { OperationTransport } from '@avantstay/graphql-ts-client'
+
+const transport: OperationTransport = async ({ url, body, headers, params }) => {
+  // Send one POST attempt using your HTTP implementation.
+  // body is { query, variables, operationName }; params contains _q and, on retries, _retrial.
+  return sendOperation(url, body, headers, params)
+}
+
+const client = createMyAwesomeApi({ url: 'https://runtime.example.com/graphql', transport })
+client.setHeader('X-Client', 'example')
+const response = await client.queries.article.raw({ __retry: false, title: true })
+```
+
+The optional `url` applies from the first operation call. If omitted, the client uses its generated endpoint. Existing `setUrl()`
+and per-call `__url` overrides remain available; a per-call override does not change the client's URL.
+
+The callback runs after the existing serializer and request listeners, with merged content-type, client and call headers. Treat
+request values as input; copy before transforming them. It returns `{ status, headers, data }`, where `data` is the GraphQL
+envelope, including any `data`, `errors`, `warnings` and `extensions.warnings`. Resolve HTTP errors with their status and envelope
+so normal classification and response listeners still apply. Reject for transport failures, which reject direct and `raw()` calls
+and become HTTP failures in `settle()`. The transport owns network I/O, cancellation, limits, redirects and any transport-level
+retries. The client does not add these policies to a custom transport.
+
+`__retry: false` disables all package retries, including an enabled 401 retry. `raw()` always executes and bypasses memo caches.
+Use both for one callback invocation per call. `memo()` and `memoRaw()` still cache within their own client instance; calling the
+factory without a transport uses Axios with the same endpoint behavior as the singleton.
+
+The transport applies to queries and mutations. Subscriptions always stream over the global `fetch` (see
+[Subscriptions](#subscriptions)), using the client's URL, headers and request listeners.
+
 ## Partial responses in one minute
 
 **The problem.** A GraphQL server does not have to answer all-or-nothing. When one field fails, it can still return every other

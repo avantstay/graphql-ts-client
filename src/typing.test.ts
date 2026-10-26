@@ -80,6 +80,34 @@ function typeProbeDiagnostics(assertions: string): string[] {
 }
 
 describe('generated typings', () => {
+  it('types the generated factory transport and preserves endpoint projection', () => {
+    expect(
+      diagnosticsFor(`
+      import { createSample } from './sample'
+      const isolated = createSample({ transport: async request => {
+        const url: string = request.url
+        const query: string = request.body.query
+        const name: string = request.body.operationName
+        const header: string = request.headers['X-Client']
+        const params: { _q: string; _retrial?: number } = request.params
+        void [url, query, name, header, params, request.body.variables]
+        return { status: 200, headers: {}, data: { data: { user: { id: 'u1' } } } }
+      } })
+      async function probe() {
+        const result = await isolated.queries.user.raw({ __retry: false, __args: { id: 'u1' }, id: true })
+        const id: string = result.data.id
+        return id
+      }
+    `)
+    ).toEqual([])
+    expect(
+      diagnosticsFor(`
+      import { createSample } from './sample'
+      createSample({ transport: async () => ({ status: 'wrong', headers: {} }) })
+    `).join('\n')
+    ).toMatch(/status/)
+  })
+
   it('accepts settle() on a query without sources and narrows data by outcome', () => {
     expect(
       diagnosticsFor(`

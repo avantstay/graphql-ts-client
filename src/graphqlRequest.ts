@@ -1,17 +1,17 @@
 import _axios, { AxiosStatic } from 'axios'
 import { classify, Classification } from './settle/classify'
 import { attachClassification } from './settle/settleRaw'
-import { ClientConfig, FailureMode, GraphQLClientError, OperationKind, RequestRetry, ResponseData } from './types'
+import {
+  ClientConfig,
+  FailureMode,
+  GraphQLClientError,
+  GraphQLResponseBody,
+  OperationKind,
+  RequestRetry,
+  ResponseData,
+} from './types'
 
 const sleep = (ms = 0) => new Promise<void>(resolve => setTimeout(() => resolve(), ms))
-
-/** The GraphQL envelope a server returns; every field is optional because an error response may carry none of them. */
-export type GraphQLBody = {
-  data?: any
-  errors?: any[]
-  warnings?: any
-  extensions?: { warnings?: any }
-}
 
 /** One attempt at the operation; `trial > 0` tags the request as a retry so the server can tell them apart. */
 async function postOperation({
@@ -32,26 +32,31 @@ async function postOperation({
   trial: number
 }) {
   const infoParams = { _q: queryName, ...(trial > 0 ? { _retrial: trial + 1 } : {}) }
+  const body = { query, variables, operationName: queryName }
+  const request = {
+    url: client.url,
+    body,
+    params: infoParams,
+    headers: { 'Content-Type': 'application/json', ...client.headers, ...requestHeaders },
+  }
   const {
-    data: responseData = {} as GraphQLBody,
+    data: responseData = {},
     headers,
     status,
-  } = await axios.post(
-    client.url,
-    { query, variables, operationName: queryName },
-    {
-      params: infoParams,
-      headers: { 'Content-Type': 'application/json', ...client.headers, ...requestHeaders },
-      validateStatus: () => true,
-    }
-  )
+  } = client.transport
+    ? await client.transport(request)
+    : await axios.post(client.url, body, {
+        params: request.params,
+        headers: request.headers,
+        validateStatus: () => true,
+      })
 
   return { responseData, headers, status }
 }
 
 /** Classifies one attempt's payload and assembles the response the endpoint layer reads. */
 export function buildResponse(
-  attempt: { responseData: GraphQLBody; headers: any; status: number },
+  attempt: { responseData: GraphQLResponseBody; headers: any; status: number },
   queryName: string,
   errorsParser?: (errors: any[]) => any
 ): { response: ResponseData; classification: Classification } {
@@ -124,7 +129,7 @@ export async function graphqlRequest({
 }: GraphqlRequestOptions) {
   let response!: ResponseData
   let retry: RequestRetry | undefined
-  let budget = initialRetryBudget(client, shouldRetry && kind === 'query')
+  let budget = initialRetryBudget(client, shouldRetry, kind)
 
   for (let trial = 0; ; trial++) {
     const requestHeaders = await headersFor(retry)
@@ -152,8 +157,11 @@ type RetryBudget = { unauthorized: boolean; errors: number }
  * Mutations get no error retries: a mutation that returned errors has an unknown server-side outcome. A 401 retry is
  * allowed for any operation, because the server rejected the request before running it.
  */
-function initialRetryBudget(client: ClientConfig, retriesErrors: boolean): RetryBudget {
-  return { unauthorized: client.retryConfig.unauthorized === true, errors: retriesErrors ? client.retryConfig.max : 0 }
+function initialRetryBudget(client: ClientConfig, shouldRetry: boolean, kind: OperationKind): RetryBudget {
+  return {
+    unauthorized: shouldRetry && client.retryConfig.unauthorized === true,
+    errors: shouldRetry && kind === 'query' ? client.retryConfig.max : 0,
+  }
 }
 
 /** Which retry, if any, follows this attempt, and the budget left after it. */
