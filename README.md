@@ -17,6 +17,22 @@ Generate fully typed Typescript clients for your GraphQL APIs.
 yarn add @avantstay/graphql-ts-client
 ```
 
+### Importing in browser code
+
+The root entry, `@avantstay/graphql-ts-client`, is the code generator. It loads Node-only modules (`esbuild`, `prettier`, `fs`,
+`os`, `path`), so a browser bundle that imports it fails on load with `process is not defined`. Browser code imports the runtime
+helpers from `@avantstay/graphql-ts-client/browser` instead:
+
+```typescript
+import { GraphQLClientError, resubscribe, failedAt, errorsAt, isSettled } from '@avantstay/graphql-ts-client/browser'
+import type { ConnectionState, SettledError, SettledResponse, Subscription } from '@avantstay/graphql-ts-client/browser'
+```
+
+`/browser` exports every runtime value and type the root entry exports (`GraphQLClientError`, `MissingSourcesError`,
+`resubscribe`, `isSettled`, `failedAt`, `errorsAt`, `parsePath`, `pathToString`, `isPrefixPath`, and their types), but not
+`generateTypescriptClient` or `generateTypescriptClientFromSDL`. Everything it loads must run in a browser, and `yarn test:dist`
+checks that it imports nothing Node-only. The root entry still exports the same helpers for Node code.
+
 ## Usage
 
 ### Generate the client
@@ -215,7 +231,7 @@ query you send.
 Two helpers make `failedPaths` easier to use than string matching:
 
 ```typescript
-import { failedAt, errorsAt } from '@avantstay/graphql-ts-client'
+import { failedAt, errorsAt } from '@avantstay/graphql-ts-client/browser'
 
 failedAt(result, 'author.rating') // true — an ancestor of this path failed
 errorsAt(result, 'author') // the errors at or under this path
@@ -655,7 +671,7 @@ sent, and it waits an exponential backoff with jitter between attempts. It retur
 only when it is closed, `signal` aborts, or the retries run out:
 
 ```typescript
-import { resubscribe } from '@avantstay/graphql-ts-client'
+import { resubscribe } from '@avantstay/graphql-ts-client/browser'
 
 const controller = new AbortController()
 const comments = resubscribe(() => myAwesomeApi.subscriptions.articleCommentAdded({ __args: { articleId }, id: true }), {
@@ -767,6 +783,9 @@ What a subscription endpoint returns, from the direct call, `raw()` and `settle(
 | `close()`                | `() => void`                                                                                                                              | Closes the connection. Loops end, observers are not called again, and nothing is reported as an error or a completion. |
 
 ### Helpers
+
+Import these from `@avantstay/graphql-ts-client/browser` in browser code (see
+[Importing in browser code](#importing-in-browser-code)).
 
 | Export                                      | Signature                                                                                                                                                                  | Use                                                                                     |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |

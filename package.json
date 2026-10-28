@@ -1,6 +1,6 @@
 {
   "name": "@avantstay/graphql-ts-client",
-  "version": "14.0.0",
+  "version": "14.1.0",
   "description": "GraphQL Typescript Client Generator",
   "homepage": "https://github.com/avantstay/graphql-ts-client",
   "bugs": {
@@ -26,6 +26,11 @@
       "import": "./dist/endpoint.mjs",
       "require": "./dist/endpoint.js"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
+    },
     "./dist": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
@@ -35,6 +40,11 @@
       "types": "./dist/endpoint.d.ts",
       "import": "./dist/endpoint.mjs",
       "require": "./dist/endpoint.js"
+    },
+    "./dist/browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
     }
   },
   "main": "dist/index.js",
@@ -44,7 +54,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && yarn tsup src/index.ts src/endpoint.ts --dts --format cjs,esm",
+    "build": "rm -rf dist && yarn tsup src/index.ts src/endpoint.ts src/browser.ts --dts --format cjs,esm",
     "prepublishOnly": "yarn build",
     "test": "cross-env GQL_CLIENT_DIST_PATH='.' jest --watch",
     "test:dist": "yarn build && node scripts/smoke-dist.mjs"

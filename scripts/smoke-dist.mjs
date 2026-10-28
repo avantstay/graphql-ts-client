@@ -9,6 +9,7 @@ import ts from 'typescript'
 import { checkPackedHttp } from './packed-http.mjs'
 
 import '../dist/endpoint.mjs'
+import * as esmBrowserBundle from '../dist/browser.mjs'
 import {
   generateTypescriptClientFromSDL as generateFromEsm,
   GraphQLClientError as GraphQLClientErrorFromEsm,
@@ -21,6 +22,7 @@ const requireFromScript = createRequire(import.meta.url)
 
 const cjsIndexBundle = requireFromScript('../dist/index.js')
 const cjsEndpointBundle = requireFromScript('../dist/endpoint.js')
+const cjsBrowserBundle = requireFromScript('../dist/browser.js')
 const axios = requireFromScript('axios')
 
 const {
@@ -179,6 +181,65 @@ async function resubscribeReconnectsOnCompletion(resubscribe) {
   assert.deepEqual(values, [1, 2, 3])
 }
 
+/** The only packages the browser-safe entries (`./browser`, and `./endpoint` that generated clients load) may import. Anything else (esbuild, prettier, Node built-ins) breaks browser apps on load. */
+const BROWSER_SAFE_PACKAGES = new Set(['axios', 'lodash', 'moize'])
+const IMPORT_SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']/g
+const NODE_GLOBAL = /\b(?:process\.|__dirname\b|__filename\b)/
+
+/** Follows `entry`'s relative imports through every chunk and fails on any import or Node global outside the browser-safe set. */
+function assertBrowserSafe(entry) {
+  const distDir = fileURLToPath(new URL('../dist/', import.meta.url))
+  const pending = [path.join(distDir, entry)]
+  const visited = new Set()
+  const offending = []
+  while (pending.length > 0) {
+    const file = pending.pop()
+    if (visited.has(file)) continue
+    visited.add(file)
+    const code = fs.readFileSync(file, 'utf8')
+    const nodeGlobal = code.match(NODE_GLOBAL)
+    if (nodeGlobal) offending.push(`${path.basename(file)} uses ${nodeGlobal[0]}`)
+    for (const [, specifier] of code.matchAll(IMPORT_SPECIFIER)) {
+      if (specifier.startsWith('.')) {
+        pending.push(path.resolve(path.dirname(file), specifier))
+        continue
+      }
+      const packageName = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0]
+      if (!BROWSER_SAFE_PACKAGES.has(packageName)) offending.push(`${path.basename(file)} imports ${specifier}`)
+    }
+  }
+  assert.deepEqual(offending, [], `${entry} must stay browser-safe`)
+}
+
+const BROWSER_RUNTIME_VALUES = [
+  'resubscribe',
+  'GraphQLClientError',
+  'MissingSourcesError',
+  'isSettled',
+  'errorsAt',
+  'failedAt',
+  'parsePath',
+  'pathToString',
+  'isPrefixPath',
+]
+
+function browserEntryExportsTheRuntimeHelpers() {
+  for (const [moduleSystem, bundle] of [
+    ['ESM', esmBrowserBundle],
+    ['CJS', cjsBrowserBundle],
+  ]) {
+    for (const name of BROWSER_RUNTIME_VALUES) {
+      assert.equal(typeof bundle[name], 'function', `${moduleSystem} browser entry should export ${name}`)
+    }
+    assert.equal(bundle.generateTypescriptClient, undefined, `${moduleSystem} browser entry should not export the codegen`)
+  }
+  assert.equal(
+    esmBrowserBundle.GraphQLClientError,
+    GraphQLClientErrorFromEsm,
+    'ESM browser and root entries share one GraphQLClientError'
+  )
+}
+
 /** Exercise generated consumers of the packed package, using only its public export map. */
 async function packedGeneratedClients() {
   const repoRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -311,6 +372,15 @@ const CHECKS = [
     () => resubscribeReconnectsOnCompletion(cjsIndexBundle.resubscribe),
   ],
   ['resubscribe() from the ESM entry reconnects on completion', () => resubscribeReconnectsOnCompletion(resubscribeFromEsm)],
+  ['the ESM browser entry and its chunks import nothing Node-only', () => assertBrowserSafe('browser.mjs')],
+  ['the CJS browser entry imports nothing Node-only', () => assertBrowserSafe('browser.js')],
+  ['the ESM endpoint entry and its chunks import nothing Node-only', () => assertBrowserSafe('endpoint.mjs')],
+  ['the CJS endpoint entry imports nothing Node-only', () => assertBrowserSafe('endpoint.js')],
+  ['the browser entry exports the runtime helpers and not the codegen', browserEntryExportsTheRuntimeHelpers],
+  [
+    'resubscribe() from the ESM browser entry reconnects on completion',
+    () => resubscribeReconnectsOnCompletion(esmBrowserBundle.resubscribe),
+  ],
 ]
 
 async function main() {
